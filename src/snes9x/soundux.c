@@ -26,8 +26,21 @@
 #include "../audio_opt.h"
 #endif
 
-#define CLIP16(v) \
-(v) = (((v) <= -32768) ? -32768 : (((v) >= 32767) ? 32767 : (v)))
+/* Soft-clip: smoothly compress peaks instead of hard clipping.
+ * Preserves voice sample detail while preventing harsh distortion. */
+static inline int32_t soft_clip16(int32_t v) {
+   if (v > 24000) {
+      v = 24000 + ((v - 24000) >> 2);
+      if (v > 30000) v = 30000 + ((v - 30000) >> 3);
+      if (v > 32767) v = 32767;
+   } else if (v < -24000) {
+      v = -24000 + ((v + 24000) >> 2);
+      if (v < -30000) v = -30000 + ((v + 30000) >> 3);
+      if (v < -32768) v = -32768;
+   }
+   return v;
+}
+#define CLIP16(v) (v) = soft_clip16(v)
 
 #define CLIP8(v) \
 (v) = (((v) <= -128) ? -128 : (((v) >= 127) ? 127 : (v)))
@@ -766,14 +779,14 @@ static INLINE void MixStereo(int32_t sample_count)
          if (pitch_mod & (1 << (J + 1)))
             wave [I / 2] = ch->sample * ch->envx;
 
-         MixBuffer [I    ] += VL >> 2;  // Attenuate per-channel to prevent mix clipping
-         MixBuffer [I + 1] += VR >> 2;
+         MixBuffer [I    ] += VL;
+         MixBuffer [I + 1] += VR;
 
          if (!ch->echo_buf_ptr)
             continue;
 
-         ch->echo_buf_ptr [I    ] += VL >> 2;
-         ch->echo_buf_ptr [I + 1] += VR >> 2;
+         ch->echo_buf_ptr [I    ] += VL;
+         ch->echo_buf_ptr [I + 1] += VR;
       }
 stereo_exit:;
    }

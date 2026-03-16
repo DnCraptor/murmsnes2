@@ -677,9 +677,8 @@ static void __time_critical_func(emulation_loop)(void) {
         bool ring_full = (prod - cons) >= AUDIO_QUEUE_DEPTH;
         uint32_t *dst32 = ring_full ? audio_packed_discard : audio_packed_buffer[prod % AUDIO_QUEUE_DEPTH];
 
-        // Gain 4x compensates for per-channel >>2 attenuation in MixStereo.
-        // Net effect: same final volume, but no inter-channel clipping in MixBuffer.
-        const int gain_num = 20;
+        // Unity gain - mix output is already soft-limited in CLIP16
+        const int gain_num = 5;
         const int gain_den = 5;
         // Always use soft limiter for smooth audio (no hard clipping artifacts)
         const bool use_soft_limiter = true;
