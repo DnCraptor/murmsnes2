@@ -26,21 +26,8 @@
 #include "../audio_opt.h"
 #endif
 
-/* Soft-clip: smoothly compress peaks instead of hard clipping.
- * Preserves voice sample detail while preventing harsh distortion. */
-static inline int32_t soft_clip16(int32_t v) {
-   if (v > 24000) {
-      v = 24000 + ((v - 24000) >> 2);
-      if (v > 30000) v = 30000 + ((v - 30000) >> 3);
-      if (v > 32767) v = 32767;
-   } else if (v < -24000) {
-      v = -24000 + ((v + 24000) >> 2);
-      if (v < -30000) v = -30000 + ((v + 30000) >> 3);
-      if (v < -32768) v = -32768;
-   }
-   return v;
-}
-#define CLIP16(v) (v) = soft_clip16(v)
+#define CLIP16(v) \
+(v) = (((v) <= -32768) ? -32768 : (((v) >= 32767) ? 32767 : (v)))
 
 #define CLIP8(v) \
 (v) = (((v) <= -128) ? -128 : (((v) >= 127) ? 127 : (v)))
@@ -131,7 +118,22 @@ static const uint32_t IncreaseRate [32] =
 #define FIXED_POINT_REMAINDER 0xffffUL
 #define FIXED_POINT_SHIFT 16
 
-#define VOL_DIV16 0x0080  // 128: standard snes9x value (clipping handled at channel level)
+#define VOL_DIV16 0x0080  // 128: standard value, soft limiting applied at output only
+
+/* Soft limiter for final audio output only (NOT for internal sample processing).
+ * Gently compresses peaks to prevent harsh clipping artifacts on drums/sfx. */
+static inline int16_t soft_clip_output(int32_t v) {
+   /* Threshold near max so single-channel drums/voice pass through clean.
+    * Only multi-channel peaks that would hard-clip get gently softened. */
+   if (v > 32000) {
+      v = 32000 + ((v - 32000) / 6);
+      if (v > 32767) v = 32767;
+   } else if (v < -32000) {
+      v = -32000 + ((v + 32000) / 6);
+      if (v < -32768) v = -32768;
+   }
+   return (int16_t)v;
+}
 #define ENVX_SHIFT 24
 
 /* F is channel's current frequency and M is the 16-bit modulation waveform
@@ -819,8 +821,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
                SoundData.echo_ptr = 0;
 
             I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
-            CLIP16(I);
-            buffer[J] = I;
+            buffer[J] = soft_clip_output(I);
          }
       }
       else
@@ -847,8 +848,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
                SoundData.echo_ptr = 0;
 
             I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
-            CLIP16(I);
-            buffer[J] = I;
+            buffer[J] = soft_clip_output(I);
          }
       }
    }
@@ -862,8 +862,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
       for (J = 0; J < sample_count; J++)
       {
          I = (MixBuffer[J] * SoundData.master_volume [J & 1]) / VOL_DIV16;
-         CLIP16(I);
-         buffer[J] = I;
+         buffer[J] = soft_clip_output(I);
       }
 #endif
    }
@@ -918,8 +917,7 @@ void S9xMixSamplesMono(int16_t* buffer, int32_t sample_count)
 
          int32_t echo_vol = (SoundData.echo_volume[0] + SoundData.echo_volume[1]) / 2;
          I = (mono * master_vol + E * echo_vol) / VOL_DIV16;
-         CLIP16(I);
-         buffer[J] = I;
+         buffer[J] = soft_clip_output(I);
       }
    }
    else
@@ -931,8 +929,7 @@ void S9xMixSamplesMono(int16_t* buffer, int32_t sample_count)
          int32_t right = MixBuffer[J * 2 + 1];
          int32_t mono = (left + right) / 2;
          I = (mono * master_vol) / VOL_DIV16;
-         CLIP16(I);
-         buffer[J] = I;
+         buffer[J] = soft_clip_output(I);
       }
    }
 }

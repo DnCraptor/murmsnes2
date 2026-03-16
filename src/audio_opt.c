@@ -94,35 +94,31 @@ void audio_pack_mono_to_stereo(uint32_t* dst, const int16_t* src, uint32_t count
  *     CLIP16(I);
  *     buffer[J] = I;
  *   }
- * VOL_DIV16 = 256 (0x100)
+ * VOL_DIV16 = 128 (0x80). Uses soft limiting at output for smooth peaks.
  */
+static inline int16_t soft_clip_mix(int32_t v) {
+    if (v > 32000) {
+        v = 32000 + ((v - 32000) / 6);
+        if (v > 32767) v = 32767;
+    } else if (v < -32000) {
+        v = -32000 + ((v + 32000) / 6);
+        if (v < -32768) v = -32768;
+    }
+    return (int16_t)v;
+}
+
 void audio_mix_noecho_opt(int16_t* buffer, int32_t sample_count,
                            const int32_t* MixBuffer, const int16_t* master_volume)
 {
     const int32_t left_vol = master_volume[0];
     const int32_t right_vol = master_volume[1];
 
-    // Process in pairs for better performance
     int32_t i = 0;
     for (; i < sample_count - 1; i += 2) {
-        // Left channel (even index)
-        int32_t val = (MixBuffer[i] * left_vol) >> 7;  // Divide by 128 (VOL_DIV16)
-        if (val < -32768) val = -32768;
-        if (val > 32767) val = 32767;
-        buffer[i] = val;
-
-        // Right channel (odd index)
-        val = (MixBuffer[i + 1] * right_vol) >> 8;
-        if (val < -32768) val = -32768;
-        if (val > 32767) val = 32767;
-        buffer[i + 1] = val;
+        buffer[i]     = soft_clip_mix((MixBuffer[i]     * left_vol)  >> 7);
+        buffer[i + 1] = soft_clip_mix((MixBuffer[i + 1] * right_vol) >> 7);
     }
-
-    // Handle odd sample (if any)
     if (i < sample_count) {
-        int32_t val = (MixBuffer[i] * left_vol) >> 8;
-        if (val < -32768) val = -32768;
-        if (val > 32767) val = 32767;
-        buffer[i] = val;
+        buffer[i] = soft_clip_mix((MixBuffer[i] * left_vol) >> 7);
     }
 }

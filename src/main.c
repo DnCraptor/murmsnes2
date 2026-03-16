@@ -677,7 +677,7 @@ static void __time_critical_func(emulation_loop)(void) {
         bool ring_full = (prod - cons) >= AUDIO_QUEUE_DEPTH;
         uint32_t *dst32 = ring_full ? audio_packed_discard : audio_packed_buffer[prod % AUDIO_QUEUE_DEPTH];
 
-        // Unity gain - mix output is already soft-limited in CLIP16
+        // Unity gain - soft limiting is applied in the mixer output stage
         const int gain_num = 5;
         const int gain_den = 5;
         // Always use soft limiter for smooth audio (no hard clipping artifacts)
