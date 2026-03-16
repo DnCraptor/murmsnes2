@@ -94,19 +94,8 @@ void audio_pack_mono_to_stereo(uint32_t* dst, const int16_t* src, uint32_t count
  *     CLIP16(I);
  *     buffer[J] = I;
  *   }
- * VOL_DIV16 = 128 (0x80). Uses soft limiting at output for smooth peaks.
+ * VOL_DIV16 = 128 (0x80)
  */
-static inline int16_t soft_clip_mix(int32_t v) {
-    if (v > 32000) {
-        v = 32000 + ((v - 32000) / 6);
-        if (v > 32767) v = 32767;
-    } else if (v < -32000) {
-        v = -32000 + ((v + 32000) / 6);
-        if (v < -32768) v = -32768;
-    }
-    return (int16_t)v;
-}
-
 void audio_mix_noecho_opt(int16_t* buffer, int32_t sample_count,
                            const int32_t* MixBuffer, const int16_t* master_volume)
 {
@@ -115,10 +104,16 @@ void audio_mix_noecho_opt(int16_t* buffer, int32_t sample_count,
 
     int32_t i = 0;
     for (; i < sample_count - 1; i += 2) {
-        buffer[i]     = soft_clip_mix((MixBuffer[i]     * left_vol)  >> 7);
-        buffer[i + 1] = soft_clip_mix((MixBuffer[i + 1] * right_vol) >> 7);
+        int32_t l = (MixBuffer[i]     * left_vol)  >> 7;
+        int32_t r = (MixBuffer[i + 1] * right_vol) >> 7;
+        if (l < -32768) l = -32768; else if (l > 32767) l = 32767;
+        if (r < -32768) r = -32768; else if (r > 32767) r = 32767;
+        buffer[i]     = l;
+        buffer[i + 1] = r;
     }
     if (i < sample_count) {
-        buffer[i] = soft_clip_mix((MixBuffer[i] * left_vol) >> 7);
+        int32_t l = (MixBuffer[i] * left_vol) >> 7;
+        if (l < -32768) l = -32768; else if (l > 32767) l = 32767;
+        buffer[i] = l;
     }
 }

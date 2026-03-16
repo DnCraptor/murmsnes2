@@ -680,8 +680,7 @@ static void __time_critical_func(emulation_loop)(void) {
         // Unity gain - soft limiting is applied in the mixer output stage
         const int gain_num = 5;
         const int gain_den = 5;
-        // Always use soft limiter for smooth audio (no hard clipping artifacts)
-        const bool use_soft_limiter = true;
+        const bool use_soft_limiter = false;
 #ifdef MURMSNES_PROFILE
         uint32_t t4 = time_us_32();
 #endif
