@@ -677,8 +677,9 @@ static void __time_critical_func(emulation_loop)(void) {
         bool ring_full = (prod - cons) >= AUDIO_QUEUE_DEPTH;
         uint32_t *dst32 = ring_full ? audio_packed_discard : audio_packed_buffer[prod % AUDIO_QUEUE_DEPTH];
 
-        // Gain factor 1.0x (no amplification - prevents clipping)
-        const int gain_num = 5;
+        // Gain 2.0x compensates for halved mix volume (VOL_DIV16=256)
+        // Net effect: same final volume, but less inter-channel clipping
+        const int gain_num = 10;
         const int gain_den = 5;
         // When we're late or audio is low, avoid the more expensive soft limiter.
         const bool use_soft_limiter = (late_us <= (int32_t)LATE_TOLERANCE_US) && (q_fill >= AUDIO_LOW_WATERMARK);

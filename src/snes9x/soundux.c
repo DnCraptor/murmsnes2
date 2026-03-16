@@ -118,7 +118,7 @@ static const uint32_t IncreaseRate [32] =
 #define FIXED_POINT_REMAINDER 0xffffUL
 #define FIXED_POINT_SHIFT 16
 
-#define VOL_DIV16 0x0080
+#define VOL_DIV16 0x0100  // 256: halve mix volume to prevent inter-channel clipping
 #define ENVX_SHIFT 24
 
 /* F is channel's current frequency and M is the 16-bit modulation waveform

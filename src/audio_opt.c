@@ -86,33 +86,33 @@ void audio_pack_mono_to_stereo(uint32_t* dst, const int16_t* src, uint32_t count
  *     CLIP16(I);
  *     buffer[J] = I;
  *   }
- * VOL_DIV16 = 128 (0x80)
+ * VOL_DIV16 = 256 (0x100)
  */
 void audio_mix_noecho_opt(int16_t* buffer, int32_t sample_count,
                            const int32_t* MixBuffer, const int16_t* master_volume)
 {
     const int32_t left_vol = master_volume[0];
     const int32_t right_vol = master_volume[1];
-    
+
     // Process in pairs for better performance
     int32_t i = 0;
     for (; i < sample_count - 1; i += 2) {
         // Left channel (even index)
-        int32_t val = (MixBuffer[i] * left_vol) >> 7;  // Divide by 128
+        int32_t val = (MixBuffer[i] * left_vol) >> 8;  // Divide by 256
         if (val < -32768) val = -32768;
         if (val > 32767) val = 32767;
         buffer[i] = val;
-        
+
         // Right channel (odd index)
-        val = (MixBuffer[i + 1] * right_vol) >> 7;
+        val = (MixBuffer[i + 1] * right_vol) >> 8;
         if (val < -32768) val = -32768;
         if (val > 32767) val = 32767;
         buffer[i + 1] = val;
     }
-    
+
     // Handle odd sample (if any)
     if (i < sample_count) {
-        int32_t val = (MixBuffer[i] * left_vol) >> 7;
+        int32_t val = (MixBuffer[i] * left_vol) >> 8;
         if (val < -32768) val = -32768;
         if (val > 32767) val = 32767;
         buffer[i] = val;
