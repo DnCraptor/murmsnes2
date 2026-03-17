@@ -131,12 +131,69 @@ void S9xAPUWritePort(int32_t Address, uint8_t Byte)
    IAPU.WaitCounter++;
 }
 
+volatile uint32_t dsp_log_frame = 0;
+
 void S9xSetAPUDSP(uint8_t byte)
 {
    uint8_t reg = IAPU.RAM [0xf2];
    static uint8_t KeyOn;
    static uint8_t KeyOnPrev;
    int32_t i;
+
+   /* KON/KOFF/STALE tracking */
+   {
+      extern int printf(const char*, ...);
+      static uint32_t kon_frame[8] = {0};
+      static uint8_t  kon_active = 0;
+      static uint32_t last_stale_check = 0;
+      uint8_t voice = reg >> 4;
+      uint8_t vreg  = reg & 0x0F;
+
+      if (reg == 0x4C && byte) {
+         for (int c = 0; c < 8; c++) {
+            if (byte & (1 << c)) {
+               if (kon_active & (1 << c)) {
+                  uint32_t dur = dsp_log_frame - kon_frame[c];
+                  printf("[DSP] f=%u KON ch%d RE-KON (no KOFF for %u frames! srcn=%02X gain=%02X)\n",
+                     (unsigned)dsp_log_frame, c, (unsigned)dur,
+                     APU.DSP[0x04 + c*0x10], APU.DSP[0x07 + c*0x10]);
+               } else {
+                  printf("[DSP] f=%u KON ch%d (srcn=%02X gain=%02X adsr1=%02X)\n",
+                     (unsigned)dsp_log_frame, c,
+                     APU.DSP[0x04 + c*0x10], APU.DSP[0x07 + c*0x10], APU.DSP[0x05 + c*0x10]);
+               }
+               kon_frame[c] = dsp_log_frame;
+               kon_active |= (1 << c);
+            }
+         }
+      }
+      else if (reg == 0x5C && byte) {
+         for (int c = 0; c < 8; c++) {
+            if (byte & (1 << c)) {
+               uint32_t dur = dsp_log_frame - kon_frame[c];
+               printf("[DSP] f=%u KOFF ch%d (on for %u frames)\n",
+                  (unsigned)dsp_log_frame, c, (unsigned)dur);
+               kon_active &= ~(1 << c);
+            }
+         }
+      }
+      else if (reg == 0x7C) printf("[DSP] f=%u ENDX_W=%02X\n", (unsigned)dsp_log_frame, byte);
+      else if (reg == 0x6C) printf("[DSP] f=%u FLG=%02X\n", (unsigned)dsp_log_frame, byte);
+      else if (voice < 8 && vreg == 0x07)
+         printf("[DSP] f=%u v%u GAIN=%02X\n", (unsigned)dsp_log_frame, voice, byte);
+
+      if (dsp_log_frame - last_stale_check >= 60) {
+         last_stale_check = dsp_log_frame;
+         for (int c = 0; c < 8; c++) {
+            if (kon_active & (1 << c)) {
+               uint32_t dur = dsp_log_frame - kon_frame[c];
+               if (dur > 30)
+                  printf("[STALE] f=%u ch%d on for %u frames without KOFF!\n",
+                     (unsigned)dsp_log_frame, c, (unsigned)dur);
+            }
+         }
+      }
+   }
 
    switch (reg)
    {

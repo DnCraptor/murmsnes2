@@ -9,7 +9,7 @@ BOARD_VARIANT="${1:?Usage: ./build.sh <M1|M2> [CPU_SPEED] [PSRAM_SPEED]}"
 # Optional build-time overrides
 : "${CPU_SPEED:=${2:-504}}"
 : "${PSRAM_SPEED:=${3:-166}}"
-: "${MURMSNES_PROFILE:=ON}"
+: "${MURMSNES_PROFILE:=OFF}"
 : "${MURMSNES_FAST_MODE:=ON}"
 
 cmake \

@@ -616,6 +616,8 @@ static void __time_critical_func(emulation_loop)(void) {
 
         IPPU.RenderThisFrame = !skip_render;
 
+        { extern volatile uint32_t dsp_log_frame; dsp_log_frame++; }
+
         // Run one SNES frame of emulation.
     #ifdef MURMSNES_PROFILE
         uint32_t t0 = time_us_32();
