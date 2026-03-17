@@ -193,6 +193,14 @@ void S9xDoHBlankProcessing()
             IAPU.APUExecuting = true;
          }
       }
+      /* Safety: force SPC700 awake if it has been sleeping.
+       * Prevents permanent hang when APUShutdown puts it to sleep
+       * and no timer/port event wakes it up in time. */
+      if (!IAPU.APUExecuting && Settings.APUEnabled)
+      {
+         IAPU.APUExecuting = true;
+         IAPU.WaitCounter = 1;
+      }
       if (CPU.V_Counter & 1)
       {
          if (APU.TimerEnabled [0])
