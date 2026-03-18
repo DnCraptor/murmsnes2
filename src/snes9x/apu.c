@@ -142,6 +142,7 @@ void S9xSetAPUDSP(uint8_t byte)
    static uint8_t KeyOnPrev;
    int32_t i;
 
+#ifdef MURMSNES_DSP_LOG
    /* KON/KOFF/STALE tracking */
    {
       extern int printf(const char*, ...);
@@ -196,6 +197,7 @@ void S9xSetAPUDSP(uint8_t byte)
          }
       }
    }
+#endif
 
    switch (reg)
    {

@@ -89,7 +89,7 @@ volatile uint32_t current_buffer = 0;
 //
 // Key goal: keep Core 1 work minimal so HDMI activity doesn't starve audio.
 // 16 frames (~267ms) - absorbs CPU spikes during scene transitions
-#define AUDIO_QUEUE_DEPTH 16
+#define AUDIO_QUEUE_DEPTH 6
 // NOTE: With fixed 60Hz emulation producing exactly one audio chunk per frame,
 // the producer cannot stay "ahead" of the consumer by >1 chunk in steady state.
 // Using queue-fill watermarks to decide frame skipping will therefore
@@ -244,18 +244,7 @@ uint32_t S9xReadJoypad(const int32_t port) {
     if (nespad & DPAD_START)  joypad |= SNES_START_MASK;
     if (nespad & DPAD_SELECT) joypad |= SNES_SELECT_MASK;
 
-    /* AUTO-PRESS: cycle start/a/b at ~15 presses per second (4 frames each) */
-    if (port == 0) {
-        static uint32_t auto_frame = 0;
-        uint32_t phase = (auto_frame / 4) % 3; /* 0=start, 1=a, 2=b */
-        uint32_t sub = auto_frame % 4;
-        if (sub < 2) { /* press for 2 frames, release for 2 frames */
-            if (phase == 0) joypad |= SNES_START_MASK;
-            else if (phase == 1) joypad |= SNES_A_MASK;
-            else joypad |= SNES_B_MASK;
-        }
-        auto_frame++;
-    }
+    /* AUTO-PRESS: disabled (was used for crash repro testing) */
 
     // Merge keyboard input for port 0 (unless gamepad2_mode redirects keyboard to port 1)
     bool kbd_controls_this_port = (port == 0 && g_settings.gamepad2_mode != GAMEPAD2_MODE_KEYBOARD) ||
@@ -629,7 +618,9 @@ static void __time_critical_func(emulation_loop)(void) {
 
         IPPU.RenderThisFrame = !skip_render;
 
+#ifdef MURMSNES_DSP_LOG
         { extern volatile uint32_t dsp_log_frame; dsp_log_frame++; }
+#endif
 
         // Run one SNES frame of emulation.
     #ifdef MURMSNES_PROFILE

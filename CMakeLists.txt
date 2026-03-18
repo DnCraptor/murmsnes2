@@ -15,6 +15,9 @@ set(PSRAM_SPEED "166" CACHE STRING "PSRAM max frequency in MHz: 84, 100, 133, 16
 # Lightweight on-device profiling (prints once per second over USB stdio)
 option(MURMSNES_PROFILE "Enable periodic performance profiling output" OFF)
 
+# DSP command logging (KON/KOFF/FLG/GAIN to serial — verbose)
+option(MURMSNES_DSP_LOG "Enable DSP command logging output" OFF)
+
 # Fast mode: aggressively reduce quality for higher framerate
 # - Skips subscreen rendering entirely
 # - Limits to single BG layer in Mode 1
@@ -155,6 +158,10 @@ target_compile_definitions(murmsnes PRIVATE
 
 if(MURMSNES_PROFILE)
     target_compile_definitions(murmsnes PRIVATE MURMSNES_PROFILE=1)
+endif()
+
+if(MURMSNES_DSP_LOG)
+    target_compile_definitions(murmsnes PRIVATE MURMSNES_DSP_LOG=1)
 endif()
 
 if(MURMSNES_FAST_MODE)
