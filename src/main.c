@@ -244,12 +244,12 @@ uint32_t S9xReadJoypad(const int32_t port) {
     if (nespad & DPAD_START)  joypad |= SNES_START_MASK;
     if (nespad & DPAD_SELECT) joypad |= SNES_SELECT_MASK;
 
-    /* AUTO-PRESS: cycle start/a/b at 5 presses per second (12 frames each) */
+    /* AUTO-PRESS: cycle start/a/b at ~15 presses per second (4 frames each) */
     if (port == 0) {
         static uint32_t auto_frame = 0;
-        uint32_t phase = (auto_frame / 12) % 3; /* 0=start, 1=a, 2=b */
-        uint32_t sub = auto_frame % 12;
-        if (sub < 6) { /* press for 6 frames, release for 6 frames */
+        uint32_t phase = (auto_frame / 4) % 3; /* 0=start, 1=a, 2=b */
+        uint32_t sub = auto_frame % 4;
+        if (sub < 2) { /* press for 2 frames, release for 2 frames */
             if (phase == 0) joypad |= SNES_START_MASK;
             else if (phase == 1) joypad |= SNES_A_MASK;
             else joypad |= SNES_B_MASK;

@@ -9,10 +9,11 @@
 #include <stdbool.h>
 
 /* Enable Core 1 APU processing - set to 1 to enable */
-#define APU_ON_CORE1 1
+#define APU_ON_CORE1 0
 
-/* Shared target cycle counter */
+/* Shared state between cores */
 extern volatile int32_t apu_target_cycles;
+extern volatile int32_t apu_cycle_debt;  /* Core 0 accumulates, Core 1 applies */
 extern volatile bool apu_core1_enabled;
 
 /* Initialize Core 1 APU state */

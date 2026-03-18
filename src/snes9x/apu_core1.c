@@ -22,11 +22,13 @@
 
 /* Shared state between cores - aligned for atomic access */
 volatile int32_t __attribute__((aligned(4))) apu_target_cycles = 0;
+volatile int32_t __attribute__((aligned(4))) apu_cycle_debt = 0;
 volatile bool apu_core1_enabled = false;
 
 void apu_core1_init(void)
 {
     apu_target_cycles = 0;
+    apu_cycle_debt = 0;
     apu_core1_enabled = true;
     __dmb();
 }
@@ -43,13 +45,16 @@ void __not_in_flash_func(apu_core1_run_batch)(void)
     if (!apu_core1_enabled) return;
     /* Always keep SPC700 running — SLEEP/STOP are treated as NOPs */
     IAPU.APUExecuting = true;
-    
+
+    /* Apply cycle debt from Core 0 (HBlank adjustments).
+     * Atomic exchange: read the accumulated debt and reset to 0.
+     * This avoids a race where Core 0 writes APU.Cycles while Core 1
+     * is also modifying it (lost update → timing drift → crash). */
+    int32_t debt = __atomic_exchange_n(&apu_cycle_debt, 0, __ATOMIC_RELAXED);
+    APU.Cycles -= debt;
+
     int32_t target = apu_target_cycles;
-    
-    /* Run APU until we catch up to target - no batch limit! 
-     * Core 1 has spare cycles during HDMI blanking, use them all.
-     * The APU typically runs ~21 CPU cycles per instruction.
-     */
+
     while (APU.Cycles < target) {
         APUExecute();
     }

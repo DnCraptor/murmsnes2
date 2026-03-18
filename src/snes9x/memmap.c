@@ -621,7 +621,7 @@ void InitROM(bool Interleaved)
 #ifndef USE_BLARGG_APU
    IAPU.OneCycle = ONE_APU_CYCLE;
 #endif
-   Settings.Shutdown = false;
+   Settings.Shutdown = true;
    memset(bytes0x2000, 0, 0x2000);
    ResetSpeedMap();
    ApplyROMFixes();

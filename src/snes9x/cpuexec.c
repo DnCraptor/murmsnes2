@@ -112,10 +112,17 @@ void S9xDoHBlankProcessing()
    case HBLANK_END_EVENT:
 #ifndef USE_BLARGG_APU
       CPU.Cycles -= Settings.H_Max;
+#if defined(PICO_ON_DEVICE) && defined(APU_ON_CORE1) && APU_ON_CORE1
+      /* Don't touch APU.Cycles from Core 0 — Core 1 owns it.
+       * Accumulate debt that Core 1 applies via atomic exchange. */
+      { extern volatile int32_t apu_cycle_debt;
+        __atomic_fetch_add(&apu_cycle_debt, Settings.H_Max, __ATOMIC_RELAXED); }
+#else
       if (IAPU.APUExecuting)
          APU.Cycles -= Settings.H_Max;
       else
          APU.Cycles -= Settings.H_Max;
+#endif
 #else
       S9xAPUExecute();
       CPU.Cycles -= Settings.H_Max;

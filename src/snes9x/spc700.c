@@ -127,21 +127,53 @@ static void S9xAPUSetByte(uint8_t byte, uint32_t Address)
 #define OP1 IAPU.PC[1]
 #define OP2 IAPU.PC[2]
 
-#define APUShutdown() \
-    if (Settings.Shutdown && (IAPU.PC == IAPU.WaitAddress1 || IAPU.PC == IAPU.WaitAddress2)) \
-    { \
-       if (IAPU.WaitCounter == 0) \
-       { \
-          if (!ICPU.CPUExecuting) \
-             APU.Cycles = CPU.Cycles = CPU.NextEvent; \
-          else \
-             IAPU.APUExecuting = false; \
-       } \
-       else if (IAPU.WaitCounter >= 2) \
-          IAPU.WaitCounter = 1; \
-       else \
-          IAPU.WaitCounter--; \
-    }
+/* PC trace ring buffer for crash diagnosis */
+#define PC_TRACE_SIZE 512
+static uint16_t pc_trace[PC_TRACE_SIZE];
+static uint32_t pc_trace_idx = 0;
+
+static void spc_dump_trace(const char *reason, uint16_t crash_pc)
+{
+   extern int printf(const char*, ...);
+   printf("\n[SPC] === %s at PC=%04X ===\n", reason, crash_pc);
+   printf("[SPC] A=%02X X=%02X Y=%02X SP=%02X PSW=%02X\n",
+      IAPU.Registers.YA.B.A, IAPU.Registers.X,
+      IAPU.Registers.YA.B.Y, IAPU.Registers.S,
+      IAPU.Registers.P);
+
+   /* Last 64 PCs (most recent last) */
+   printf("[SPC] PC trace (last 64):\n");
+   uint32_t start = pc_trace_idx >= 64 ? pc_trace_idx - 64 : 0;
+   for (uint32_t i = start; i < pc_trace_idx; i++)
+      printf(" %04X", pc_trace[i % PC_TRACE_SIZE]);
+   printf("\n");
+
+   /* Stack contents (SP+1 through 0xFF = addresses 0x100+SP+1 to 0x1FF) */
+   uint8_t sp = IAPU.Registers.S;
+   printf("[SPC] Stack (0x1%02X-0x1FF):", sp + 1);
+   for (int i = sp + 1; i <= 0xFF; i++)
+      printf(" %02X", IAPU.RAM[0x100 + i]);
+   printf("\n");
+
+   /* Code bytes around crash site */
+   printf("[SPC] Code @%04X:", crash_pc);
+   for (int i = 0; i < 16; i++)
+      printf(" %02X", IAPU.RAM[(crash_pc + i) & 0xFFFF]);
+   printf("\n");
+
+   /* Code bytes before crash site */
+   uint16_t before = (crash_pc - 16) & 0xFFFF;
+   printf("[SPC] Code @%04X:", before);
+   for (int i = 0; i < 16; i++)
+      printf(" %02X", IAPU.RAM[(before + i) & 0xFFFF]);
+   printf("\n");
+}
+
+/* APUShutdown disabled — cycle teleportation causes timing drift that
+ * crashes the audio engine after thousands of frames. The SPC700 idle
+ * loop runs normally (~5 cycles/iteration) which is cheap enough.
+ * Settings.Shutdown is kept true for the 65816 CPU idle skip. */
+#define APUShutdown() do { } while(0)
 
 #define APUSetZN8(b) \
     IAPU._Zero = (b)
@@ -340,6 +372,10 @@ void APUExecute(void/*int32_t target_cycles*/)
    uint8_t  Work8, W1;
    uint16_t Work16;
    uint32_t Work32;
+
+      uint16_t _trace_pc = (uint16_t)(IAPU.PC - IAPU.RAM);
+      pc_trace[pc_trace_idx % PC_TRACE_SIZE] = _trace_pc;
+      pc_trace_idx++;
 
       uint8_t opcode = *IAPU.PC;
 
@@ -1708,14 +1744,9 @@ void APUExecute(void/*int32_t target_cycles*/)
          Pop(IAPU.Registers.YA.B.Y);
          IAPU.PC++;
          break;
-      case 0xEF: /* SLEEP — on real HW, halts until reset. Log and keep running. */
-      {
-         uint16_t spc_pc = (uint16_t)(IAPU.PC - IAPU.RAM - 1);
-         extern int printf(const char*, ...);
-         printf("[SPC] SLEEP at PC=%04X SP=%02X\n", spc_pc, IAPU.Registers.S);
-         /* Don't disable timers or halt — treat as NOP so engine keeps running */
+      case 0xEF: /* SLEEP */
+         spc_dump_trace("SLEEP", _trace_pc);
          break;
-      }
 
       case 0xF0: /* BEQ */
          Relative();
@@ -1801,14 +1832,9 @@ void APUExecute(void/*int32_t target_cycles*/)
          else
             IAPU.PC += 2;
          break;
-      case 0xFF: /* STOP — on real HW, halts until reset. Log and keep running. */
-      {
-         uint16_t spc_pc = (uint16_t)(IAPU.PC - IAPU.RAM - 1);
-         extern int printf(const char*, ...);
-         printf("[SPC] STOP at PC=%04X SP=%02X\n", spc_pc, IAPU.Registers.S);
-         /* Don't disable timers or halt — treat as NOP so engine keeps running */
+      case 0xFF: /* STOP */
+         spc_dump_trace("STOP", _trace_pc);
          break;
-      }
       }
 }
 
