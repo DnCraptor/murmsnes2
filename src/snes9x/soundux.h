@@ -86,6 +86,7 @@ typedef struct
    int16_t  next_sample;
    int32_t  interpolate;
    int32_t  previous [2];
+   int16_t  gauss_buf [4]; /* ring buffer for gaussian interpolation */
    uint8_t  env_ind_attack;
    uint8_t  env_ind_decay;
    uint8_t  env_ind_sustain;

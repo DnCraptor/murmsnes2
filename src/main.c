@@ -61,10 +61,10 @@
 #define SCREEN_WIDTH     SNES_WIDTH    // 256
 #define SCREEN_HEIGHT    SNES_HEIGHT   // 224
 
-// Audio sample rate - SNES native is 32000 Hz
-// Higher = better quality but more CPU for mixing
-#define AUDIO_SAMPLE_RATE   (32000)
-// Audio chunk size must match output rate: 60 chunks/sec
+// Audio sample rate - real SNES is 32000 Hz but we use 32040 which
+// divides evenly by 60 (534 samples/frame), avoiding the 0.33 sample/frame
+// deficit that causes periodic audio pops from buffer underruns.
+#define AUDIO_SAMPLE_RATE   (32040)
 #define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 60)
 
 //=============================================================================
@@ -442,9 +442,10 @@ void __time_critical_func(render_core)(void) {
     __dmb();
     
     // Audio playback - continuously stream from ring buffer to DMA
-    static uint32_t __attribute__((aligned(32))) silence_buf[AUDIO_BUFFER_LENGTH];
-    memset(silence_buf, 0, sizeof(silence_buf));
+    static uint32_t __attribute__((aligned(32))) fadeout_buf[AUDIO_BUFFER_LENGTH];
+    memset(fadeout_buf, 0, sizeof(fadeout_buf));
     uint32_t last_displayed_buffer = 0;
+    uint8_t underrun_count = 0;  /* consecutive underruns for progressive fade */
     while (true) {
         // Run APU batch on Core 1 - catch up to CPU target cycles
 #if APU_ON_CORE1
@@ -458,7 +459,7 @@ void __time_critical_func(render_core)(void) {
             last_displayed_buffer = current_buf;
         }
 
-        // Consume next mixed chunk if available; output silence on underrun.
+        // Consume next mixed chunk if available; fade out on underrun.
         uint32_t prod = audio_prod_seq;
         uint32_t cons = audio_cons_seq;
         const uint32_t *audio_src;
@@ -466,18 +467,32 @@ void __time_critical_func(render_core)(void) {
             uint32_t idx = cons % AUDIO_QUEUE_DEPTH;
             __dmb();
             audio_src = audio_packed_buffer[idx];
-            // Publish consumption AFTER we start using the pointer
-            // (i2s_dma_write will copy from it)
+            underrun_count = 0;
         } else {
-            // Underrun: immediate silence (no fade, no replay)
-            audio_src = silence_buf;
+            // Underrun: fade out the last buffer to avoid pops.
+            // Each consecutive underrun halves the volume.
+            if (underrun_count < 4) {
+                uint8_t shift = underrun_count + 1;
+                int16_t *fade = (int16_t *)fadeout_buf;
+                for (uint32_t i = 0; i < AUDIO_BUFFER_LENGTH * 2; i++) {
+                    // Progressive fade within buffer: louder at start, quieter at end
+                    int32_t s = fade[i];
+                    fade[i] = (int16_t)(s >> 1);
+                }
+                underrun_count++;
+            } else {
+                memset(fadeout_buf, 0, sizeof(fadeout_buf));
+            }
+            audio_src = fadeout_buf;
         }
 
         // Stream to I2S DMA (blocks until a DMA buffer is free)
         i2s_dma_write(&i2s_config, (const int16_t *)audio_src);
 
         // Advance consumer AFTER DMA copy is complete
-        if (audio_src != silence_buf) {
+        if (prod != cons) {
+            // Copy this buffer for potential fade-out on next underrun
+            memcpy(fadeout_buf, audio_src, AUDIO_BUFFER_LENGTH * sizeof(uint32_t));
             __dmb();
             audio_cons_seq = cons + 1;
         }
@@ -641,7 +656,10 @@ static void __time_critical_func(emulation_loop)(void) {
         // FAST MODE: Mix mono only (half the samples), then duplicate to stereo in packing
         S9xMixSamplesMono((void *)mix16, AUDIO_BUFFER_LENGTH);
     #else
-        S9xMixSamples((void *)mix16, AUDIO_BUFFER_LENGTH * 2);
+        // Low-pass filter smooths BRR decoding artifacts (replaces the
+        // analog filter that real SNES hardware has after the DAC).
+        // 0xC000 = ~75% previous + ~25% new — gentle rolloff above ~8kHz.
+        S9xMixSamplesLowPass((void *)mix16, AUDIO_BUFFER_LENGTH * 2, 0xC000);
     #endif
     #ifdef MURMSNES_PROFILE
         uint32_t t3 = time_us_32();
@@ -652,9 +670,11 @@ static void __time_critical_func(emulation_loop)(void) {
         bool ring_full = (prod - cons) >= AUDIO_QUEUE_DEPTH;
         uint32_t *dst32 = ring_full ? audio_packed_discard : audio_packed_buffer[prod % AUDIO_QUEUE_DEPTH];
 
-        // Reduce gain to 1/5 to prevent clipping (8 channels summed)
-        const int gain_num = 1;
-        const int gain_den = 5;
+        // Mixer attenuates by >>11 (÷2048) to prevent hard clipping.
+        // Boost 4x here with soft limiter to restore volume.
+        // Worst case: 16K × 4 = 64K → soft-limited smoothly instead of hard-clipped.
+        const int gain_num = 4;
+        const int gain_den = 1;
         const bool use_soft_limiter = true;
 #ifdef MURMSNES_PROFILE
         uint32_t t4 = time_us_32();

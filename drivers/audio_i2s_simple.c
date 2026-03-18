@@ -25,9 +25,11 @@
 #include "audio_i2s_simple.h"
 #include "board_config.h"
 
-// Static audio DMA buffer in fast SRAM (not PSRAM) to avoid memory contention with video
-// Max size: 22050/60 + 1 = 368 stereo pairs = 368 * 4 = 1472 bytes
-static uint32_t __attribute__((aligned(4))) audio_dma_buffer[512];
+// Double-buffered DMA in fast SRAM — one plays while the other is filled.
+// Each buffer holds one frame of stereo audio (534 pairs @ 32040 Hz = 2136 bytes).
+static uint32_t __attribute__((aligned(4))) audio_dma_buffer_0[540];
+static uint32_t __attribute__((aligned(4))) audio_dma_buffer_1[540];
+static uint8_t dma_buf_idx = 0; /* which buffer is currently playing */
 
 /**
  * return the default i2s context used to store information about the setup
@@ -74,27 +76,38 @@ void i2s_init(i2s_config_t *i2s_config) {
     pio_sm_set_clkdiv_int_frac(i2s_config->pio, i2s_config->sm, divider >> 8u, divider & 0xffu);
     pio_sm_set_enabled(i2s_config->pio, i2s_config->sm, false);
 
-    /* Use static SRAM buffer instead of malloc (which goes to PSRAM) */
-    i2s_config->dma_buf = audio_dma_buffer;
-    memset(i2s_config->dma_buf, 0, i2s_config->dma_trans_count * sizeof(uint32_t));
+    /* Use static SRAM double buffers instead of malloc (which goes to PSRAM) */
+    i2s_config->dma_buf = audio_dma_buffer_0;
+    dma_buf_idx = 0;
+    memset(audio_dma_buffer_0, 0, sizeof(audio_dma_buffer_0));
+    memset(audio_dma_buffer_1, 0, sizeof(audio_dma_buffer_1));
 
-    /* Direct Memory Access setup */
-    i2s_config->dma_channel = dma_claim_unused_channel(true);
-    
-    dma_channel_config dma_config = dma_channel_get_default_config(i2s_config->dma_channel);
-    channel_config_set_read_increment(&dma_config, true);
-    channel_config_set_write_increment(&dma_config, false);
-    channel_config_set_transfer_data_size(&dma_config, DMA_SIZE_32);
+    /* Claim two DMA channels for ping-pong chaining */
+    i2s_config->dma_channel  = dma_claim_unused_channel(true);
+    i2s_config->dma_channel2 = dma_claim_unused_channel(true);
 
     volatile uint32_t* addr_write_DMA = &(i2s_config->pio->txf[i2s_config->sm]);
-    channel_config_set_dreq(&dma_config, pio_get_dreq(i2s_config->pio, i2s_config->sm, true));
-    
-    dma_channel_configure(i2s_config->dma_channel,
-                          &dma_config,
-                          (void*)addr_write_DMA,
-                          i2s_config->dma_buf,
-                          i2s_config->dma_trans_count,
-                          false);
+    uint dreq = pio_get_dreq(i2s_config->pio, i2s_config->sm, true);
+
+    /* Configure channel A (plays buffer 0) */
+    dma_channel_config cfg_a = dma_channel_get_default_config(i2s_config->dma_channel);
+    channel_config_set_read_increment(&cfg_a, true);
+    channel_config_set_write_increment(&cfg_a, false);
+    channel_config_set_transfer_data_size(&cfg_a, DMA_SIZE_32);
+    channel_config_set_dreq(&cfg_a, dreq);
+    dma_channel_configure(i2s_config->dma_channel, &cfg_a,
+                          (void*)addr_write_DMA, audio_dma_buffer_0,
+                          i2s_config->dma_trans_count, false);
+
+    /* Configure channel B (plays buffer 1) */
+    dma_channel_config cfg_b = dma_channel_get_default_config(i2s_config->dma_channel2);
+    channel_config_set_read_increment(&cfg_b, true);
+    channel_config_set_write_increment(&cfg_b, false);
+    channel_config_set_transfer_data_size(&cfg_b, DMA_SIZE_32);
+    channel_config_set_dreq(&cfg_b, dreq);
+    dma_channel_configure(i2s_config->dma_channel2, &cfg_b,
+                          (void*)addr_write_DMA, audio_dma_buffer_1,
+                          i2s_config->dma_trans_count, false);
 
     pio_sm_set_enabled(i2s_config->pio, i2s_config->sm, true);
 }
@@ -119,24 +132,31 @@ void i2s_write(const i2s_config_t *i2s_config,const int16_t *samples,const size_
  *     sample: pointer to an array of dma_trans_count x 32 bits samples
  */
 void i2s_dma_write(i2s_config_t *i2s_config,const int16_t *samples) {
-    /* Wait the completion of the previous DMA transfer */
-    dma_channel_wait_for_finish_blocking(i2s_config->dma_channel);
-    /* Copy samples into the DMA buffer */
+    /* Ping-pong: fill idle buffer while active DMA channel plays the other.
+     * dma_buf_idx tracks which buffer is being played (0 or 1). */
+    uint8_t active_ch_idx = dma_buf_idx;  /* 0 = channel A playing buf 0 */
+    uint8_t active_dma = active_ch_idx ? i2s_config->dma_channel2 : i2s_config->dma_channel;
+    uint8_t next_dma   = active_ch_idx ? i2s_config->dma_channel  : i2s_config->dma_channel2;
+    uint32_t *idle_buf = active_ch_idx ? audio_dma_buffer_0 : audio_dma_buffer_1;
 
+    /* Fill idle buffer while active DMA is still playing */
     if(i2s_config->volume == 0) {
-        memcpy(i2s_config->dma_buf, samples, i2s_config->dma_trans_count * sizeof(uint32_t));
+        memcpy(idle_buf, samples, i2s_config->dma_trans_count * sizeof(uint32_t));
     } else {
-        // Apply volume attenuation to each 16-bit sample
-        int16_t *dst = (int16_t *)i2s_config->dma_buf;
+        int16_t *dst = (int16_t *)idle_buf;
         for(uint16_t i = 0; i < i2s_config->dma_trans_count * 2; i++) {
             dst[i] = samples[i] >> i2s_config->volume;
         }
     }
 
-    /* Initiate the DMA transfer */
-    dma_channel_transfer_from_buffer_now(i2s_config->dma_channel,
-                                         i2s_config->dma_buf,
+    /* Wait for active DMA to finish */
+    dma_channel_wait_for_finish_blocking(active_dma);
+
+    /* Start next DMA from idle buffer immediately */
+    dma_channel_transfer_from_buffer_now(next_dma, idle_buf,
                                          i2s_config->dma_trans_count);
+
+    dma_buf_idx ^= 1;
 }
 
 /**

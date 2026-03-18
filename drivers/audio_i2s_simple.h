@@ -44,6 +44,7 @@ typedef struct i2s_config
     PIO	     pio;
     uint8_t  sm; 
     uint8_t  dma_channel;
+    uint8_t  dma_channel2;    // Second DMA channel for chaining
     uint16_t dma_trans_count;
     uint32_t *dma_buf;  // Buffer for 32-bit stereo sample pairs (L+R)
     uint8_t volume;

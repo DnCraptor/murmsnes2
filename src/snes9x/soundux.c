@@ -121,6 +121,64 @@ static uint32_t IncreaseRate [32] =
 #define VOL_DIV16 0x0080
 #define ENVX_SHIFT 24
 
+/* Gaussian interpolation table — from real SNES DSP (512 entries, mirrored).
+ * NOT const: on RP2350, const goes to flash/XIP which can glitch at high
+ * clock speeds. ~1KB in RAM is acceptable. */
+static int16_t gauss_table [512] =
+{
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,
+   2,   2,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   5,   5,   5,   5,
+   6,   6,   6,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  10,
+  11,  11,  11,  12,  12,  13,  13,  14,  14,  15,  15,  15,  16,  16,  17,  17,
+  18,  19,  19,  20,  20,  21,  21,  22,  23,  23,  24,  24,  25,  26,  27,  27,
+  28,  29,  29,  30,  31,  32,  32,  33,  34,  35,  36,  36,  37,  38,  39,  40,
+  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,
+  58,  59,  60,  61,  62,  64,  65,  66,  67,  69,  70,  71,  73,  74,  76,  77,
+  78,  80,  81,  83,  84,  86,  87,  89,  90,  92,  94,  95,  97,  99, 100, 102,
+ 104, 106, 107, 109, 111, 113, 115, 117, 118, 120, 122, 124, 126, 128, 130, 132,
+ 134, 137, 139, 141, 143, 145, 147, 150, 152, 154, 156, 159, 161, 163, 166, 168,
+ 171, 173, 175, 178, 180, 183, 186, 188, 191, 193, 196, 199, 201, 204, 207, 210,
+ 212, 215, 218, 221, 224, 227, 230, 233, 236, 239, 242, 245, 248, 251, 254, 257,
+ 260, 263, 267, 270, 273, 276, 280, 283, 286, 290, 293, 297, 300, 304, 307, 311,
+ 314, 318, 321, 325, 328, 332, 336, 339, 343, 347, 351, 354, 358, 362, 366, 370,
+ 374, 378, 381, 385, 389, 393, 397, 401, 405, 410, 414, 418, 422, 426, 430, 434,
+ 439, 443, 447, 451, 456, 460, 464, 469, 473, 477, 482, 486, 491, 495, 499, 504,
+ 508, 513, 517, 522, 527, 531, 536, 540, 545, 550, 554, 559, 563, 568, 573, 577,
+ 582, 587, 592, 596, 601, 606, 611, 615, 620, 625, 630, 635, 640, 644, 649, 654,
+ 659, 664, 669, 674, 678, 683, 688, 693, 698, 703, 708, 713, 718, 723, 728, 732,
+ 737, 742, 747, 752, 757, 762, 767, 772, 777, 782, 787, 792, 797, 802, 806, 811,
+ 816, 821, 826, 831, 836, 841, 846, 851, 855, 860, 865, 870, 875, 880, 884, 889,
+ 894, 899, 904, 908, 913, 918, 923, 927, 932, 937, 941, 946, 951, 955, 960, 965,
+ 969, 974, 978, 983, 988, 992, 997,1001,1005,1010,1014,1019,1023,1027,1032,1036,
+1040,1045,1049,1053,1057,1061,1066,1070,1074,1078,1082,1086,1090,1094,1098,1102,
+1106,1109,1113,1117,1121,1125,1128,1132,1136,1139,1143,1146,1150,1153,1157,1160,
+1164,1167,1170,1174,1177,1180,1183,1186,1190,1193,1196,1199,1202,1205,1207,1210,
+1213,1216,1219,1221,1224,1227,1229,1232,1234,1237,1239,1241,1244,1246,1248,1251,
+1253,1255,1257,1259,1261,1263,1265,1267,1269,1270,1272,1274,1275,1277,1279,1280,
+1282,1283,1284,1286,1287,1288,1290,1291,1292,1293,1294,1295,1296,1297,1297,1298,
+1299,1300,1300,1301,1302,1302,1303,1303,1303,1304,1304,1304,1304,1304,1305,1305,
+};
+
+static INLINE int16_t gauss_interpolate(const int16_t *buf, uint32_t frac)
+{
+   /* frac is 16-bit fractional position, use top 8 bits as table index */
+   int offset = (frac >> 8) & 0xFF;
+   const int16_t *fwd = gauss_table + 255 - offset;
+   const int16_t *rev = gauss_table + offset;
+
+   int out  = (fwd[  0] * buf[0]) >> 11;
+   out     += (fwd[256] * buf[1]) >> 11;
+   out     += (rev[256] * buf[2]) >> 11;
+   out      = (int16_t) out;
+   out     += (rev[  0] * buf[3]) >> 11;
+
+   if (out < -32768) out = -32768;
+   else if (out > 32767) out = 32767;
+   out &= ~1;
+   return (int16_t) out;
+}
+
 /* F is channel's current frequency and M is the 16-bit modulation waveform
  * from the previous channel multiplied by the current envelope volume level. */
 #define PITCH_MOD(F,M) ((F) * ((((uint32_t) (M)) + 0x800000) >> 16) >> 7)
@@ -526,8 +584,10 @@ static INLINE void MixStereo(int32_t sample_count)
          ch->next_sample = ch->block[ch->sample_pointer];
          ch->interpolate = 0;
 
-         if (Settings.InterpolatedSound && freq0 < FIXED_POINT && !mod)
-            ch->interpolate = ((ch->next_sample - ch->sample) * (int32_t) freq0) / (int32_t) FIXED_POINT;
+         ch->gauss_buf[0] = ch->gauss_buf[1];
+         ch->gauss_buf[1] = ch->gauss_buf[2];
+         ch->gauss_buf[2] = ch->gauss_buf[3];
+         ch->gauss_buf[3] = ch->next_sample;
       }
       VL = (ch->sample * ch-> left_vol_level) / 128;
       VR = (ch->sample * ch->right_vol_level) / 128;
@@ -730,13 +790,17 @@ static INLINE void MixStereo(int32_t sample_count)
 
             if (ch->type == SOUND_SAMPLE)
             {
+               /* Shift gaussian ring buffer and insert new sample */
+               ch->gauss_buf[0] = ch->gauss_buf[1];
+               ch->gauss_buf[1] = ch->gauss_buf[2];
+               ch->gauss_buf[2] = ch->gauss_buf[3];
+               ch->gauss_buf[3] = ch->next_sample;
+
                if (Settings.InterpolatedSound && freq < FIXED_POINT && !mod)
-               {
-                  ch->interpolate = ((ch->next_sample - ch->sample) * (int32_t) freq) / (int32_t) FIXED_POINT;
-                  ch->sample = (int16_t)(ch->sample + (((ch->next_sample - ch->sample) * (int32_t)(ch->count)) / (int32_t) FIXED_POINT));
-               }
+                  ch->sample = gauss_interpolate(ch->gauss_buf, ch->count);
                else
-                  ch->interpolate = 0;
+                  ch->sample = ch->next_sample;
+               ch->interpolate = 0;
             }
             else
             {
@@ -752,12 +816,10 @@ static INLINE void MixStereo(int32_t sample_count)
          }
          else
          {
-            if (ch->interpolate)
+            /* Between sample steps: re-interpolate with advancing fraction */
+            if (Settings.InterpolatedSound && ch->type == SOUND_SAMPLE)
             {
-               int32_t s = (int32_t) ch->sample + ch->interpolate;
-
-               CLIP16(s);
-               ch->sample = (int16_t) s;
+               ch->sample = gauss_interpolate(ch->gauss_buf, ch->count);
                VL = (ch->sample * ch-> left_vol_level) / 128;
                VR = (ch->sample * ch->right_vol_level) / 128;
             }
@@ -805,7 +867,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
             if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                SoundData.echo_ptr = 0;
 
-            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
+            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / (VOL_DIV16 * 16);
             CLIP16(I);
             buffer[J] = I;
          }
@@ -833,7 +895,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
             if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                SoundData.echo_ptr = 0;
 
-            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
+            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / (VOL_DIV16 * 16);
             CLIP16(I);
             buffer[J] = I;
          }
@@ -848,7 +910,7 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
 #else
       for (J = 0; J < sample_count; J++)
       {
-         I = (MixBuffer[J] * SoundData.master_volume [J & 1]) / VOL_DIV16;
+         I = (MixBuffer[J] * SoundData.master_volume [J & 1]) / (VOL_DIV16 * 16);
          CLIP16(I);
          buffer[J] = I;
       }
@@ -904,7 +966,7 @@ void S9xMixSamplesMono(int16_t* buffer, int32_t sample_count)
             SoundData.echo_ptr = 0;
 
          int32_t echo_vol = (SoundData.echo_volume[0] + SoundData.echo_volume[1]) / 2;
-         I = (mono * master_vol + E * echo_vol) / VOL_DIV16;
+         I = (mono * master_vol + E * echo_vol) / (VOL_DIV16 * 16);
          CLIP16(I);
          buffer[J] = I;
       }
@@ -917,7 +979,7 @@ void S9xMixSamplesMono(int16_t* buffer, int32_t sample_count)
          int32_t left = MixBuffer[J * 2];
          int32_t right = MixBuffer[J * 2 + 1];
          int32_t mono = (left + right) / 2;
-         I = (mono * master_vol) / VOL_DIV16;
+         I = (mono * master_vol) / (VOL_DIV16 * 16);
          CLIP16(I);
          buffer[J] = I;
       }
@@ -954,7 +1016,7 @@ void S9xMixSamplesLowPass(int16_t* buffer, int32_t sample_count, int32_t low_pas
             if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                SoundData.echo_ptr = 0;
 
-            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
+            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / (VOL_DIV16 * 16);
             CLIP16(I);
 
             /* Apply low-pass filter */
@@ -989,7 +1051,7 @@ void S9xMixSamplesLowPass(int16_t* buffer, int32_t sample_count, int32_t low_pas
             if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                SoundData.echo_ptr = 0;
 
-            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / VOL_DIV16;
+            I = (MixBuffer[J] * SoundData.master_volume [J & 1] + E * SoundData.echo_volume [J & 1]) / (VOL_DIV16 * 16);
             CLIP16(I);
 
             /* Apply low-pass filter */
@@ -1007,7 +1069,7 @@ void S9xMixSamplesLowPass(int16_t* buffer, int32_t sample_count, int32_t low_pas
       for (J = 0; J < sample_count; J++)
       {
          int32_t *low_pass_sample = &MixOutputPrev[J & 0x1];
-         I = (MixBuffer[J] * SoundData.master_volume [J & 1]) / VOL_DIV16;
+         I = (MixBuffer[J] * SoundData.master_volume [J & 1]) / (VOL_DIV16 * 16);
          CLIP16(I);
 
          /* Apply low-pass filter */
@@ -1196,6 +1258,7 @@ void S9xPlaySample(int32_t channel)
    ch->needs_decode = true;
    ch->last_block = false;
    ch->previous [0] = ch->previous[1] = 0;
+   ch->gauss_buf[0] = ch->gauss_buf[1] = ch->gauss_buf[2] = ch->gauss_buf[3] = 0;
    dir = S9xGetSampleAddress(ch->sample_number);
    ch->block_pointer = READ_WORD(dir);
    ch->sample_pointer = 0;
