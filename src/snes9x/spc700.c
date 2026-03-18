@@ -1708,10 +1708,14 @@ void APUExecute(void/*int32_t target_cycles*/)
          Pop(IAPU.Registers.YA.B.Y);
          IAPU.PC++;
          break;
-      case 0xEF: /* SLEEP */
-         APU.TimerEnabled[0] = APU.TimerEnabled[1] = APU.TimerEnabled[2] = false;
-         IAPU.APUExecuting = false;
+      case 0xEF: /* SLEEP — on real HW, halts until reset. Log and keep running. */
+      {
+         uint16_t spc_pc = (uint16_t)(IAPU.PC - IAPU.RAM - 1);
+         extern int printf(const char*, ...);
+         printf("[SPC] SLEEP at PC=%04X SP=%02X\n", spc_pc, IAPU.Registers.S);
+         /* Don't disable timers or halt — treat as NOP so engine keeps running */
          break;
+      }
 
       case 0xF0: /* BEQ */
          Relative();
@@ -1797,11 +1801,14 @@ void APUExecute(void/*int32_t target_cycles*/)
          else
             IAPU.PC += 2;
          break;
-      case 0xFF: /* STOP */
-         APU.TimerEnabled[0] = APU.TimerEnabled[1] = APU.TimerEnabled[2] = false;
-         IAPU.APUExecuting = false;
-         Settings.APUEnabled = false; /* re-enabled on next APU reset */
+      case 0xFF: /* STOP — on real HW, halts until reset. Log and keep running. */
+      {
+         uint16_t spc_pc = (uint16_t)(IAPU.PC - IAPU.RAM - 1);
+         extern int printf(const char*, ...);
+         printf("[SPC] STOP at PC=%04X SP=%02X\n", spc_pc, IAPU.Registers.S);
+         /* Don't disable timers or halt — treat as NOP so engine keeps running */
          break;
+      }
       }
 }
 

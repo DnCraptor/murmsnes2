@@ -115,7 +115,7 @@ void S9xDoHBlankProcessing()
       if (IAPU.APUExecuting)
          APU.Cycles -= Settings.H_Max;
       else
-         APU.Cycles = 0;
+         APU.Cycles -= Settings.H_Max;
 #else
       S9xAPUExecute();
       CPU.Cycles -= Settings.H_Max;
@@ -191,21 +191,6 @@ void S9xDoHBlankProcessing()
             APU.Timer [2] -= APU.TimerTarget [2];
             IAPU.WaitCounter++;
             IAPU.APUExecuting = true;
-         }
-      }
-      /* If SPC700 is sleeping, ensure infrastructure stays alive so
-       * timer events and port writes can wake it naturally.
-       * Do NOT force APUExecuting=true — that disrupts the audio
-       * engine's state machine and can cause bad jumps. */
-      if (!IAPU.APUExecuting && !IAPU.Hung)
-      {
-         Settings.APUEnabled = true;
-         /* Re-enable timers if they were killed by STOP opcode */
-         if (!APU.TimerEnabled[0] && !APU.TimerEnabled[1] && !APU.TimerEnabled[2])
-         {
-            APU.TimerEnabled[2] = true;
-            if ((APU.TimerTarget[2] = IAPU.RAM[0xfc]) == 0)
-               APU.TimerTarget[2] = 0x100;
          }
       }
       if (CPU.V_Counter & 1)

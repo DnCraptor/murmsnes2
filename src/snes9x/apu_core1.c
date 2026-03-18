@@ -40,7 +40,9 @@ void __not_in_flash_func(apu_core1_set_target_cycles)(int32_t target)
 /* Run APU until caught up - called from Core 1 render loop */
 void __not_in_flash_func(apu_core1_run_batch)(void)
 {
-    if (!apu_core1_enabled || !IAPU.APUExecuting) return;
+    if (!apu_core1_enabled) return;
+    /* Always keep SPC700 running — SLEEP/STOP are treated as NOPs */
+    IAPU.APUExecuting = true;
     
     int32_t target = apu_target_cycles;
     
