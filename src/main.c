@@ -632,36 +632,66 @@ static void __time_critical_func(emulation_loop)(void) {
         { extern volatile uint32_t dsp_log_frame; dsp_log_frame++; }
 
         /* Detect SPC700 hang: no DSP writes for 120 frames = 2 seconds.
-         * Stop the SPC700 and fake port acks so 65816 doesn't stall. */
+         * Two-stage recovery:
+         *   Stage 1 (120 frames): Stop SPC700, fake port acks
+         *   Stage 2 (180 frames): Full APU reset + drain audio queue
+         *     IPL ROM outputs AA/BB → 65816 may re-upload audio program */
         {
             extern volatile uint32_t dsp_write_count;
             extern volatile uint32_t dsp_log_frame;
             static uint32_t last_dsp_writes = 0;
             static uint32_t quiet_frames = 0;
+            static uint32_t reset_cooldown = 0;
             uint32_t cur = dsp_write_count;
 
-            if (cur == last_dsp_writes && cur > 0) { /* cur>0: don't trigger during boot */
+            if (reset_cooldown > 0) {
+                reset_cooldown--;
+                last_dsp_writes = cur; /* track new baseline */
+            } else if (cur == last_dsp_writes && cur > 0) {
                 quiet_frames++;
-                if (quiet_frames >= 120) {
-                    /* Fake APU acks so the 65816 transfer protocol doesn't stall */
+
+                if (quiet_frames >= 180 && IAPU.Hung) {
+                    /* Stage 2: full APU reset after 3 seconds */
+                    uint16_t pc = (uint16_t)(IAPU.PC - IAPU.RAM);
+                    LOG("[APU] Full reset (was at PC=%04X). Draining audio queue.\n", pc);
+
+                    /* Drain audio ring buffer — Core 1 will output silence */
+                    __dmb();
+                    audio_prod_seq = audio_cons_seq;
+                    __dmb();
+
+                    /* Full APU reset: clears RAM, restores IPL ROM, resets DSP+sound.
+                     * IPL ROM outputs AA/BB on ports for 65816 handshake. */
+                    S9xResetAPU();
+                    /* S9xResetAPU clears Hung flag and sets APUExecuting=true */
+
+                    quiet_frames = 0;
+                    last_dsp_writes = dsp_write_count;
+                    reset_cooldown = 600; /* 10s grace for re-upload */
+                } else if (quiet_frames >= 120 && !IAPU.Hung) {
+                    /* Stage 1: stop SPC700, fake acks */
+                    IAPU.Hung = true;
+                    IAPU.APUExecuting = false;
+
                     APU.OutPorts[0] = IAPU.RAM[0xf4];
                     APU.OutPorts[1] = IAPU.RAM[0xf5];
                     APU.OutPorts[2] = IAPU.RAM[0xf6];
                     APU.OutPorts[3] = IAPU.RAM[0xf7];
 
-                    if (!IAPU.Hung) {
-                        IAPU.Hung = true;
-                        IAPU.APUExecuting = false;
-
-                        uint16_t pc = (uint16_t)(IAPU.PC - IAPU.RAM);
-                        LOG("[HANG] SPC700 crashed at PC=%04X — stopped, faking acks\n", pc);
-                    }
+                    uint16_t pc = (uint16_t)(IAPU.PC - IAPU.RAM);
+                    LOG("[APU] SPC700 hung at PC=%04X — stopped, faking acks\n", pc);
+                } else if (quiet_frames >= 120 && IAPU.Hung) {
+                    /* Keep faking acks while waiting for stage 2 */
+                    APU.OutPorts[0] = IAPU.RAM[0xf4];
+                    APU.OutPorts[1] = IAPU.RAM[0xf5];
+                    APU.OutPorts[2] = IAPU.RAM[0xf6];
+                    APU.OutPorts[3] = IAPU.RAM[0xf7];
                 }
             } else {
                 last_dsp_writes = cur;
                 quiet_frames = 0;
                 if (IAPU.Hung) {
-                    LOG("[HANG] SPC700 recovered — DSP writes resumed\n");
+                    LOG("[APU] SPC700 recovered — DSP writes resumed\n");
                     IAPU.Hung = false;
                 }
             }
