@@ -333,7 +333,7 @@ static inline void snes9x_init(void) {
     Settings.HBlankStart = (256 * Settings.H_Max) / SNES_HCOUNTER_MAX;
     Settings.SoundPlaybackRate = AUDIO_SAMPLE_RATE;
     Settings.DisableSoundEcho = true;
-    Settings.InterpolatedSound = false;
+    Settings.InterpolatedSound = true;
 
     S9xInitDisplay();
     S9xInitMemory();

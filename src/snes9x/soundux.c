@@ -111,10 +111,13 @@ void S9xDSPSetFrameStart(int32_t cycle)
 static uint8_t  sfx_btn_pending = 0;    /* frames since last button press */
 static uint8_t  sfx_channel_mask = 0;   /* channels KON'd during button window */
 static uint8_t  sfx_timer[8] = {0};     /* per-channel frames since SFX KON */
+static uint8_t  sfx_killed_srcn[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+static uint8_t  sfx_killed_ttl[8] = {0}; /* frames to keep remembering killed srcn */
+#define SFX_KILLED_MEMORY 60  /* remember killed srcn for 1 second */
 
 void S9xNotifyButtonPress(void)
 {
-   sfx_btn_pending = 15;  /* watch for KON in the next 15 frames */
+   sfx_btn_pending = 4;  /* watch for KON in the next 4 frames */
 }
 
 void S9xSFXAutoReleaseTick(void)
@@ -123,7 +126,13 @@ void S9xSFXAutoReleaseTick(void)
    if (sfx_btn_pending > 0)
       sfx_btn_pending--;
 
-   /* Check each SFX-marked channel */
+   /* Decrement killed-srcn memory */
+   for (int c = 0; c < 8; c++)
+      if (sfx_killed_ttl[c] > 0)
+         sfx_killed_ttl[c]--;
+
+   /* Check each SFX-marked channel — release after timeout.
+    * Channels that hit a BRR loop point get released sooner (see mixer). */
    uint8_t mask = 1;
    for (int c = 0; c < 8; c++, mask <<= 1)
    {
@@ -132,15 +141,22 @@ void S9xSFXAutoReleaseTick(void)
          sfx_timer[c]++;
          if (sfx_timer[c] >= SFX_RELEASE_FRAMES)
          {
-            /* Auto-release this SFX channel */
-            if (SoundData.channels[c].state != SOUND_SILENT &&
-                SoundData.channels[c].state != SOUND_RELEASE)
+            /* Timeout fallback — hard-silence regardless */
+            Channel *ch = &SoundData.channels[c];
+            if (ch->state != SOUND_SILENT)
             {
                extern int printf(const char*, ...);
                extern volatile uint32_t dsp_log_frame;
-               printf("[SFX-OFF] f=%u ch%d srcn=%02X\n",
-                  (unsigned)dsp_log_frame, c, SoundData.channels[c].sample_number);
-               S9xSetSoundKeyOff(c);
+               printf("[SFX-OFF] f=%u ch%d srcn=%02X (timeout)\n",
+                  (unsigned)dsp_log_frame, c, ch->sample_number);
+               ch->state = SOUND_SILENT;
+               ch->mode = MODE_RELEASE;
+               ch->envx = 0;
+               ch->envxx = 0;
+               ch->left_vol_level = 0;
+               ch->right_vol_level = 0;
+               sfx_killed_srcn[c] = ch->sample_number;
+               sfx_killed_ttl[c] = SFX_KILLED_MEMORY;
             }
             sfx_channel_mask &= ~mask;
             sfx_timer[c] = 0;
@@ -149,19 +165,72 @@ void S9xSFXAutoReleaseTick(void)
    }
 }
 
-/* Called from apu.c when KON happens — check if it's during button window */
+/* Called from the mixer when a SFX-tagged channel hits a BRR loop point.
+ * Immediately silences the channel to prevent audible repeats. */
+void S9xSFXLoopRelease(int channel)
+{
+   uint8_t mask = 1 << channel;
+   if (!(sfx_channel_mask & mask))
+      return;
+
+   Channel *ch = &SoundData.channels[channel];
+   if (ch->state != SOUND_SILENT)
+   {
+      extern int printf(const char*, ...);
+      extern volatile uint32_t dsp_log_frame;
+      printf("[SFX-OFF] f=%u ch%d srcn=%02X (loop)\n",
+         (unsigned)dsp_log_frame, channel, ch->sample_number);
+      /* Hard-silence: skip the slow RELEASE envelope, go straight to silent */
+      ch->state = SOUND_SILENT;
+      ch->mode = MODE_RELEASE;
+      ch->envx = 0;
+      ch->envxx = 0;
+      ch->left_vol_level = 0;
+      ch->right_vol_level = 0;
+      /* Remember this srcn so re-KON of the same sample gets re-tagged */
+      sfx_killed_srcn[channel] = ch->sample_number;
+      sfx_killed_ttl[channel] = SFX_KILLED_MEMORY;
+   }
+   sfx_channel_mask &= ~mask;
+   sfx_timer[channel] = 0;
+}
+
+/* Called from apu.c when KON happens — check if it's during button window
+ * or if this srcn was recently killed (game re-triggering a stuck SFX). */
 void S9xSFXCheckKON(int channel)
 {
    if (sfx_btn_pending > 0)
    {
       sfx_channel_mask |= (1 << channel);
       sfx_timer[channel] = 0;
+      return;
    }
-   else
+
+   /* Check if this KON re-triggers a recently killed srcn (on any channel).
+    * If so, immediately silence — don't let it play even one cycle. */
+   uint8_t srcn = SoundData.channels[channel].sample_number;
+   for (int c = 0; c < 8; c++)
    {
-      /* Not a button-triggered KON — clear SFX mark if channel is reused */
-      sfx_channel_mask &= ~(1 << channel);
+      if (sfx_killed_ttl[c] > 0 && sfx_killed_srcn[c] == srcn)
+      {
+         Channel *ch = &SoundData.channels[channel];
+         ch->state = SOUND_SILENT;
+         ch->mode = MODE_RELEASE;
+         ch->envx = 0;
+         ch->envxx = 0;
+         ch->left_vol_level = 0;
+         ch->right_vol_level = 0;
+         /* Refresh the kill memory */
+         sfx_killed_srcn[channel] = srcn;
+         sfx_killed_ttl[channel] = SFX_KILLED_MEMORY;
+         sfx_channel_mask &= ~(1 << channel);
+         sfx_timer[channel] = 0;
+         return;
+      }
    }
+
+   /* Not a button-triggered or re-triggered KON — clear SFX mark */
+   sfx_channel_mask &= ~(1 << channel);
 }
 
 static uint32_t AttackRate [16] =
@@ -241,20 +310,13 @@ static int16_t gauss_table [512] =
 
 static INLINE int16_t gauss_interpolate(const int16_t *buf, uint32_t frac)
 {
-   /* frac is 16-bit fractional position, use top 8 bits as table index */
-   int offset = (frac >> 8) & 0xFF;
-   const int16_t *fwd = gauss_table + 255 - offset;
-   const int16_t *rev = gauss_table + offset;
-
-   int out  = (fwd[  0] * buf[0]) >> 11;
-   out     += (fwd[256] * buf[1]) >> 11;
-   out     += (rev[256] * buf[2]) >> 11;
-   out      = (int16_t) out;
-   out     += (rev[  0] * buf[3]) >> 11;
-
+   /* Linear interpolation: lerp between buf[2] (current) and buf[3] (next)
+    * using the fractional position.  Lighter than 4-point Gaussian but still
+    * removes the stair-step artifacts of nearest-sample. */
+   int32_t f = (frac >> 1) & 0x7FFF;           /* 0..32767 */
+   int32_t out = buf[2] + ((f * (buf[3] - buf[2])) >> 15);
    if (out < -32768) out = -32768;
    else if (out > 32767) out = 32767;
-   out &= ~1;
    return (int16_t) out;
 }
 
@@ -858,10 +920,7 @@ static INLINE void MixStereoSegment(int32_t buf_offset, int32_t sample_count)
                         ch->block_pointer = READ_WORD(dir + 2);
 
                         if (sfx_channel_mask & (1 << J)) {
-                           extern int printf(const char*, ...);
-                           extern volatile uint32_t dsp_log_frame;
-                           printf("LOOP FOUND f=%u ch%u srcn=%02X\n",
-                              (unsigned)dsp_log_frame, J, ch->sample_number);
+                           S9xSFXLoopRelease(J);
                         }
                      }
                   }
