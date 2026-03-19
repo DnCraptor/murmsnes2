@@ -332,8 +332,8 @@ static inline void snes9x_init(void) {
     Settings.ControllerOption = SNES_JOYPAD;
     Settings.HBlankStart = (256 * Settings.H_Max) / SNES_HCOUNTER_MAX;
     Settings.SoundPlaybackRate = AUDIO_SAMPLE_RATE;
-    Settings.DisableSoundEcho = false;
-    Settings.InterpolatedSound = true;  // Enable sample interpolation for smoother sound
+    Settings.DisableSoundEcho = true;
+    Settings.InterpolatedSound = false;
 
     S9xInitDisplay();
     S9xInitMemory();
@@ -453,6 +453,12 @@ void __time_critical_func(render_core)(void) {
     memset(fadeout_buf, 0, sizeof(fadeout_buf));
     uint32_t last_displayed_buffer = 0;
     uint8_t underrun_count = 0;  /* consecutive underruns for progressive fade */
+    bool was_underrun = false;   /* previous chunk was underrun — need fade-in */
+    uint32_t total_underruns = 0;
+    uint32_t total_chunks = 0;
+    uint32_t diag_timer = 0;
+    uint32_t max_gap_us = 0;   /* longest gap between consecutive consumer calls */
+    uint32_t prev_consume_us = 0;
     while (true) {
         // Run APU batch on Core 1 - catch up to CPU target cycles
 #if APU_ON_CORE1
@@ -470,20 +476,37 @@ void __time_critical_func(render_core)(void) {
         uint32_t prod = audio_prod_seq;
         uint32_t cons = audio_cons_seq;
         const uint32_t *audio_src;
+        total_chunks++;
         if (prod != cons) {
             uint32_t idx = cons % AUDIO_QUEUE_DEPTH;
             __dmb();
             audio_src = audio_packed_buffer[idx];
+
+            // After underrun, apply fade-in to avoid click at resume boundary.
+            // Ramp first FADE_IN_SAMPLES from 0→1 so the waveform starts from
+            // silence instead of jumping to a non-zero value.
+            #define FADE_IN_SAMPLES 32
+            if (was_underrun) {
+                // Copy to fadeout_buf so we can modify in-place
+                memcpy(fadeout_buf, audio_src, AUDIO_BUFFER_LENGTH * sizeof(uint32_t));
+                int16_t *p = (int16_t *)fadeout_buf;
+                for (uint32_t i = 0; i < FADE_IN_SAMPLES; i++) {
+                    p[i * 2]     = (int16_t)((p[i * 2]     * (int32_t)i) / FADE_IN_SAMPLES);
+                    p[i * 2 + 1] = (int16_t)((p[i * 2 + 1] * (int32_t)i) / FADE_IN_SAMPLES);
+                }
+                audio_src = fadeout_buf;
+            }
+
+            was_underrun = false;
             underrun_count = 0;
         } else {
+            total_underruns++;
+            was_underrun = true;
             // Underrun: ramp from last sample to zero (no buffer replay).
-            // This avoids re-playing sound effects that were in the last buffer.
             if (underrun_count == 0) {
                 int16_t *fade = (int16_t *)fadeout_buf;
-                // Get last L/R values from the previous buffer
                 int16_t last_l = fade[(AUDIO_BUFFER_LENGTH - 1) * 2];
                 int16_t last_r = fade[(AUDIO_BUFFER_LENGTH - 1) * 2 + 1];
-                // Generate a smooth ramp to zero
                 for (uint32_t i = 0; i < AUDIO_BUFFER_LENGTH; i++) {
                     int32_t t = AUDIO_BUFFER_LENGTH - i;
                     fade[i * 2]     = (int16_t)((last_l * t) / (int32_t)AUDIO_BUFFER_LENGTH);
@@ -499,12 +522,37 @@ void __time_critical_func(render_core)(void) {
         // Stream to I2S DMA (blocks until a DMA buffer is free)
         i2s_dma_write(&i2s_config, (const int16_t *)audio_src);
 
+        // Track consumer cadence
+        uint32_t now_us = time_us_32();
+        if (prev_consume_us) {
+            uint32_t gap = now_us - prev_consume_us;
+            if (gap > max_gap_us) max_gap_us = gap;
+        }
+        prev_consume_us = now_us;
+
         // Advance consumer AFTER DMA copy is complete
         if (prod != cons) {
-            // Copy this buffer for potential fade-out on next underrun
-            memcpy(fadeout_buf, audio_src, AUDIO_BUFFER_LENGTH * sizeof(uint32_t));
+            // Save unmodified buffer for potential fade-out on next underrun.
+            // (audio_src may point to fadeout_buf with fade-in applied, so
+            //  re-copy from the original ring buffer slot.)
+            uint32_t idx2 = cons % AUDIO_QUEUE_DEPTH;
+            memcpy(fadeout_buf, audio_packed_buffer[idx2], AUDIO_BUFFER_LENGTH * sizeof(uint32_t));
             __dmb();
             audio_cons_seq = cons + 1;
+        }
+
+        // Log underrun stats every ~5 seconds (~300 chunks at 60Hz)
+        if (++diag_timer >= 300) {
+            uint32_t pct10 = total_chunks ? (total_underruns * 1000 / total_chunks) : 0;
+            printf("[AUDIO] underruns=%lu/%lu (%lu.%lu%%) max_gap=%luus q_fill=%lu\n",
+                   (unsigned long)total_underruns, (unsigned long)total_chunks,
+                   (unsigned long)(pct10 / 10), (unsigned long)(pct10 % 10),
+                   (unsigned long)max_gap_us,
+                   (unsigned long)(audio_prod_seq - audio_cons_seq));
+            total_underruns = 0;
+            total_chunks = 0;
+            max_gap_us = 0;
+            diag_timer = 0;
         }
     }
 }
@@ -667,7 +715,7 @@ static void __time_critical_func(emulation_loop)(void) {
         // FAST MODE: Mix mono only (half the samples), then duplicate to stereo in packing
         S9xMixSamplesMono((void *)mix16, AUDIO_BUFFER_LENGTH);
     #else
-        S9xMixSamplesLowPass((void *)mix16, AUDIO_BUFFER_LENGTH * 2, 0xC000);
+        S9xMixSamples((void *)mix16, AUDIO_BUFFER_LENGTH * 2);
     #endif
     #ifdef MURMSNES_PROFILE
         uint32_t t3 = time_us_32();
