@@ -16,12 +16,15 @@
 #include "display.h"
 #include "gfx.h"
 #include "apu.h"
+#include "settings.h"
 
-#ifdef PICO_ON_DEVICE
-#include "pico/stdlib.h"
-#endif
+extern volatile bool g_palette_needs_update;
+
 #ifdef MURMSNES_PROFILE
+#include "pico/stdlib.h"
 #include "murmsnes_profile.h"
+#elif defined(PICO_ON_DEVICE)
+#include "pico/stdlib.h"
 #endif
 
 /* Diagnostic: track S9xUpdateScreen calls and render time per frame */
@@ -325,6 +328,7 @@ void S9xDeinitGFX(void)
 
 void S9xStartScreenRefresh(void)
 {
+#ifdef MURMSNES_PROFILE
    /* Report and reset S9xUpdateScreen call counter */
    if (g_upd_screen_calls > upd_screen_max_calls) {
       upd_screen_max_calls = g_upd_screen_calls;
@@ -332,10 +336,11 @@ void S9xStartScreenRefresh(void)
       printf("[GFX] f=%u UpdateScreen calls=%u (new max)\n",
          (unsigned)dsp_log_frame, (unsigned)g_upd_screen_calls);
    }
-   g_upd_screen_calls = 0;
    g_render_us = 0;
    g_render_obj_us = 0;
    g_render_bg_us[0] = g_render_bg_us[1] = g_render_bg_us[2] = g_render_bg_us[3] = 0;
+#endif
+   g_upd_screen_calls = 0;
 
    if (IPPU.RenderThisFrame)
    {
@@ -461,9 +466,8 @@ void S9xEndScreenRefresh(void)
 
       if (IPPU.ColorsChanged)
       {
-         uint32_t saved = PPU.CGDATA[0];
          IPPU.ColorsChanged = false;
-         PPU.CGDATA[0] = saved;
+         g_palette_needs_update = true;
       }
 
       GFX.Pitch = GFX.Pitch2 = GFX.RealPitch;
@@ -2776,22 +2780,15 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
    }
 
 #ifdef MURMSNES_FAST_MODE
-   /* DEBUG: Force-disable individual background layers for testing */
-#if !DEBUG_BG0_ENABLED
-   BG0 = false;
-#endif
-#if !DEBUG_BG1_ENABLED
-   BG1 = false;
-#endif
-#if !DEBUG_BG2_ENABLED
-   BG2 = false;
-#endif
-#if !DEBUG_BG3_ENABLED
-   BG3 = false;
-#endif
-#if !DEBUG_OBJ_ENABLED
-   OB = false;
-#endif
+   /* Runtime layer enable/disable from settings menu */
+   {
+      extern settings_t g_settings;
+      if (!(g_settings.bg_enabled & 0x01)) BG0 = false;
+      if (!(g_settings.bg_enabled & 0x02)) BG1 = false;
+      if (!(g_settings.bg_enabled & 0x04)) BG2 = false;
+      if (!(g_settings.bg_enabled & 0x08)) BG3 = false;
+      if (!g_settings.sprites_enabled)     OB  = false;
+   }
 
    /* FAST MODE: Interlaced BG1 rendering - render every other line, duplicate */
    /* This is handled in DrawBackground by setting a global flag */
@@ -2809,6 +2806,10 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
 
    sub |= force_no_add;
 
+   /* Runtime transparency disable from settings */
+   if (!g_settings.transparency_enabled)
+      sub = true;
+
    switch (PPU.BGMode)
    {
       case 0:
@@ -2816,51 +2817,51 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
          if (OB)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(4));
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             uint32_t _obj_t0 = time_us_32();
 #endif
             DrawOBJS(!sub, D);
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             g_render_obj_us += (time_us_32() - _obj_t0);
 #endif
          }
          if (BG0)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(0));
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             uint32_t _bg0_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 0, D + 10, D + 14);
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             g_render_bg_us[0] += (time_us_32() - _bg0_t0);
 #endif
          }
          if (BG1)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(1));
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             uint32_t _bg1_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 1, D + 9, D + 13);
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             g_render_bg_us[1] += (time_us_32() - _bg1_t0);
 #endif
          }
          if (BG2)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(2));
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             uint32_t _bg2_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 2, D + 3, PPU.BG3Priority ? D + 17 : D + 6);
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             g_render_bg_us[2] += (time_us_32() - _bg2_t0);
 #endif
          }
          if (BG3)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(3));
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             uint32_t _bg3_t0 = time_us_32();
 #endif
             /* Mode 0: BG3 is 2bpp at priorities D+2 and D+5
@@ -2869,7 +2870,7 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
                DrawBackground(PPU.BGMode, 3, D + 2, D + 5);
             else
                DrawBackground(PPU.BGMode, 3, D + 2, PPU.BG3Priority ? D + 17 : D + 5);
-#ifdef PICO_ON_DEVICE
+#ifdef MURMSNES_PROFILE
             g_render_bg_us[3] += (time_us_32() - _bg3_t0);
 #endif
          }
@@ -3018,10 +3019,8 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
 void S9xUpdateScreen(void)
 {
    g_upd_screen_calls++;
-#ifdef PICO_ON_DEVICE
-   uint32_t _render_t0 = time_us_32();
-#endif
 #ifdef MURMSNES_PROFILE
+   uint32_t _render_t0 = time_us_32();
    uint32_t __us_t0 = _render_t0;
 #endif
    int32_t x2 = 1;
@@ -3711,10 +3710,8 @@ void S9xUpdateScreen(void)
 
    IPPU.PreviousLine = IPPU.CurrentLine;
 
-#ifdef PICO_ON_DEVICE
-   g_render_us += (time_us_32() - _render_t0);
-#endif
 #ifdef MURMSNES_PROFILE
+   g_render_us += (time_us_32() - _render_t0);
    murmsnes_prof_add_update_screen_us((uint32_t)(time_us_32() - __us_t0));
 #endif
 }
