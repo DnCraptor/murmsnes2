@@ -118,7 +118,7 @@ void S9xSetPPU(uint8_t Byte, uint16_t Address)
       case 0x2100: /* Brightness and screen blank bit */
          if (Byte != Memory.FillRAM [0x2100])
          {
-            FLUSH_REDRAW_EFFECT();
+            FLUSH_REDRAW();
             if (PPU.Brightness != (Byte & 0xF))
             {
                IPPU.ColorsChanged = true;

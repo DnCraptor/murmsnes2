@@ -9,6 +9,7 @@
 #include "hardware/clocks.h"
 #include "hardware/structs/qmi.h"
 #include "hardware/gpio.h"
+#include "hardware/watchdog.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -105,6 +106,7 @@ static volatile uint32_t audio_cons_seq = 0; // total chunks consumed
 // Sync flags
 //=============================================================================
 static volatile bool core1_ready = false;
+static volatile bool menu_active = false;  // When true, Core 1 stops overriding HDMI buffer
 
 //=============================================================================
 // FatFS
@@ -218,6 +220,62 @@ bool S9xInitDisplay(void) {
 void S9xDeinitDisplay(void) {
 }
 
+/* Helper: merge NES/SNES pad bits into SNES joypad mask */
+static inline uint32_t nespad_to_snes(uint32_t pad) {
+    uint32_t j = 0;
+    if (pad & DPAD_UP)     j |= SNES_UP_MASK;
+    if (pad & DPAD_DOWN)   j |= SNES_DOWN_MASK;
+    if (pad & DPAD_LEFT)   j |= SNES_LEFT_MASK;
+    if (pad & DPAD_RIGHT)  j |= SNES_RIGHT_MASK;
+    if (pad & DPAD_A)      j |= SNES_A_MASK;
+    if (pad & DPAD_B)      j |= SNES_B_MASK;
+    if (pad & DPAD_X)      j |= SNES_X_MASK;
+    if (pad & DPAD_Y)      j |= SNES_Y_MASK;
+    if (pad & DPAD_LT)     j |= SNES_TL_MASK;
+    if (pad & DPAD_RT)     j |= SNES_TR_MASK;
+    if (pad & DPAD_START)  j |= SNES_START_MASK;
+    if (pad & DPAD_SELECT) j |= SNES_SELECT_MASK;
+    return j;
+}
+
+/* Helper: merge PS/2+USB keyboard state bits into SNES joypad mask */
+static inline uint32_t kbd_to_snes(uint16_t kbd) {
+    uint32_t j = 0;
+    if (kbd & KBD_STATE_UP)     j |= SNES_UP_MASK;
+    if (kbd & KBD_STATE_DOWN)   j |= SNES_DOWN_MASK;
+    if (kbd & KBD_STATE_LEFT)   j |= SNES_LEFT_MASK;
+    if (kbd & KBD_STATE_RIGHT)  j |= SNES_RIGHT_MASK;
+    if (kbd & KBD_STATE_A)      j |= SNES_A_MASK;
+    if (kbd & KBD_STATE_B)      j |= SNES_B_MASK;
+    if (kbd & KBD_STATE_X)      j |= SNES_X_MASK;
+    if (kbd & KBD_STATE_Y)      j |= SNES_Y_MASK;
+    if (kbd & KBD_STATE_L)      j |= SNES_TL_MASK;
+    if (kbd & KBD_STATE_R)      j |= SNES_TR_MASK;
+    if (kbd & KBD_STATE_START)  j |= SNES_START_MASK;
+    if (kbd & KBD_STATE_SELECT) j |= SNES_SELECT_MASK;
+    return j;
+}
+
+#ifdef USB_HID_ENABLED
+/* Helper: merge USB gamepad state into SNES joypad mask */
+static inline uint32_t usbgp_to_snes(usbhid_gamepad_state_t *gp) {
+    uint32_t j = 0;
+    if (gp->dpad & 0x01) j |= SNES_UP_MASK;
+    if (gp->dpad & 0x02) j |= SNES_DOWN_MASK;
+    if (gp->dpad & 0x04) j |= SNES_LEFT_MASK;
+    if (gp->dpad & 0x08) j |= SNES_RIGHT_MASK;
+    if (gp->buttons & 0x0001) j |= SNES_A_MASK;
+    if (gp->buttons & 0x0002) j |= SNES_B_MASK;
+    if (gp->buttons & 0x0004) j |= SNES_X_MASK;
+    if (gp->buttons & 0x0008) j |= SNES_Y_MASK;
+    if (gp->buttons & 0x0010) j |= SNES_TL_MASK;
+    if (gp->buttons & 0x0020) j |= SNES_TR_MASK;
+    if (gp->buttons & 0x0040) j |= SNES_START_MASK;
+    if (gp->buttons & 0x0080) j |= SNES_SELECT_MASK;
+    return j;
+}
+#endif
+
 uint32_t S9xReadJoypad(const int32_t port) {
     // Read input devices
     nespad_read();
@@ -226,23 +284,65 @@ uint32_t S9xReadJoypad(const int32_t port) {
     usbhid_task();
 #endif
 
-    // Get gamepad state for this port
-    uint32_t nespad = (port == 0) ? nespad_state : nespad_state2;
-
-    // Map NES/SNES controller buttons to SNES format
     uint32_t joypad = 0;
-    if (nespad & DPAD_UP)     joypad |= SNES_UP_MASK;
-    if (nespad & DPAD_DOWN)   joypad |= SNES_DOWN_MASK;
-    if (nespad & DPAD_LEFT)   joypad |= SNES_LEFT_MASK;
-    if (nespad & DPAD_RIGHT)  joypad |= SNES_RIGHT_MASK;
-    if (nespad & DPAD_A)      joypad |= SNES_A_MASK;
-    if (nespad & DPAD_B)      joypad |= SNES_B_MASK;
-    if (nespad & DPAD_X)      joypad |= SNES_X_MASK;
-    if (nespad & DPAD_Y)      joypad |= SNES_Y_MASK;
-    if (nespad & DPAD_LT)     joypad |= SNES_TL_MASK;
-    if (nespad & DPAD_RT)     joypad |= SNES_TR_MASK;
-    if (nespad & DPAD_START)  joypad |= SNES_START_MASK;
-    if (nespad & DPAD_SELECT) joypad |= SNES_SELECT_MASK;
+    uint8_t mode = (port == 0) ? g_settings.p1_mode : g_settings.p2_mode;
+
+    if (mode == INPUT_MODE_DISABLED)
+        return 0;
+
+    if (mode == INPUT_MODE_ANY) {
+        // Merge ALL input sources
+        joypad |= nespad_to_snes(nespad_state);
+        joypad |= nespad_to_snes(nespad_state2);
+        uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+        kbd |= usbhid_get_kbd_state();
+#endif
+        joypad |= kbd_to_snes(kbd);
+#ifdef USB_HID_ENABLED
+        if (usbhid_gamepad_connected()) {
+            usbhid_gamepad_state_t gp;
+            usbhid_get_gamepad_state(&gp);
+            joypad |= usbgp_to_snes(&gp);
+        }
+#endif
+    } else {
+        // Specific input mode
+        switch (mode) {
+            case INPUT_MODE_NES1:
+                joypad |= nespad_to_snes(nespad_state);
+                break;
+            case INPUT_MODE_NES2:
+                joypad |= nespad_to_snes(nespad_state2);
+                break;
+            case INPUT_MODE_KEYBOARD: {
+                uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+                kbd |= usbhid_get_kbd_state();
+#endif
+                joypad |= kbd_to_snes(kbd);
+                break;
+            }
+#ifdef USB_HID_ENABLED
+            case INPUT_MODE_USB1:
+                if (usbhid_gamepad_connected_idx(0)) {
+                    usbhid_gamepad_state_t gp;
+                    usbhid_get_gamepad_state_idx(0, &gp);
+                    joypad |= usbgp_to_snes(&gp);
+                }
+                break;
+            case INPUT_MODE_USB2:
+                if (usbhid_gamepad_connected_idx(1)) {
+                    usbhid_gamepad_state_t gp;
+                    usbhid_get_gamepad_state_idx(1, &gp);
+                    joypad |= usbgp_to_snes(&gp);
+                }
+                break;
+#endif
+            default:
+                break;
+        }
+    }
 
     /* Detect new button presses — notify SFX auto-release system */
     if (port == 0) {
@@ -252,54 +352,6 @@ uint32_t S9xReadJoypad(const int32_t port) {
             S9xNotifyButtonPress();
         prev_joypad = joypad;
     }
-
-    // Merge keyboard input for port 0 (unless gamepad2_mode redirects keyboard to port 1)
-    bool kbd_controls_this_port = (port == 0 && g_settings.gamepad2_mode != GAMEPAD2_MODE_KEYBOARD) ||
-                                   (port == 1 && g_settings.gamepad2_mode == GAMEPAD2_MODE_KEYBOARD);
-    if (kbd_controls_this_port) {
-        uint16_t kbd_state = ps2kbd_get_state();
-#ifdef USB_HID_ENABLED
-        kbd_state |= usbhid_get_kbd_state();
-#endif
-        if (kbd_state & KBD_STATE_UP)     joypad |= SNES_UP_MASK;
-        if (kbd_state & KBD_STATE_DOWN)   joypad |= SNES_DOWN_MASK;
-        if (kbd_state & KBD_STATE_LEFT)   joypad |= SNES_LEFT_MASK;
-        if (kbd_state & KBD_STATE_RIGHT)  joypad |= SNES_RIGHT_MASK;
-        if (kbd_state & KBD_STATE_A)      joypad |= SNES_A_MASK;
-        if (kbd_state & KBD_STATE_B)      joypad |= SNES_B_MASK;
-        if (kbd_state & KBD_STATE_X)      joypad |= SNES_X_MASK;
-        if (kbd_state & KBD_STATE_Y)      joypad |= SNES_Y_MASK;
-        if (kbd_state & KBD_STATE_L)      joypad |= SNES_TL_MASK;
-        if (kbd_state & KBD_STATE_R)      joypad |= SNES_TR_MASK;
-        if (kbd_state & KBD_STATE_START)  joypad |= SNES_START_MASK;
-        if (kbd_state & KBD_STATE_SELECT) joypad |= SNES_SELECT_MASK;
-    }
-
-#ifdef USB_HID_ENABLED
-    // Merge USB gamepad for port based on gamepad2_mode
-    bool usb_controls_this_port = (port == 0 && g_settings.gamepad2_mode != GAMEPAD2_MODE_USB) ||
-                                   (port == 1 && g_settings.gamepad2_mode == GAMEPAD2_MODE_USB);
-    if (usb_controls_this_port && usbhid_gamepad_connected()) {
-        usbhid_gamepad_state_t gp;
-        usbhid_get_gamepad_state(&gp);
-
-        // Merge D-pad
-        if (gp.dpad & 0x01) joypad |= SNES_UP_MASK;
-        if (gp.dpad & 0x02) joypad |= SNES_DOWN_MASK;
-        if (gp.dpad & 0x04) joypad |= SNES_LEFT_MASK;
-        if (gp.dpad & 0x08) joypad |= SNES_RIGHT_MASK;
-
-        // Merge buttons (using common USB gamepad mapping)
-        if (gp.buttons & 0x0001) joypad |= SNES_A_MASK;     // A
-        if (gp.buttons & 0x0002) joypad |= SNES_B_MASK;     // B
-        if (gp.buttons & 0x0004) joypad |= SNES_X_MASK;     // X
-        if (gp.buttons & 0x0008) joypad |= SNES_Y_MASK;     // Y
-        if (gp.buttons & 0x0010) joypad |= SNES_TL_MASK;    // L
-        if (gp.buttons & 0x0020) joypad |= SNES_TR_MASK;    // R
-        if (gp.buttons & 0x0040) joypad |= SNES_START_MASK; // Start
-        if (gp.buttons & 0x0080) joypad |= SNES_SELECT_MASK;// Select
-    }
-#endif
 
     return joypad;
 }
@@ -332,8 +384,9 @@ static inline void snes9x_init(void) {
     Settings.ControllerOption = SNES_JOYPAD;
     Settings.HBlankStart = (256 * Settings.H_Max) / SNES_HCOUNTER_MAX;
     Settings.SoundPlaybackRate = AUDIO_SAMPLE_RATE;
-    Settings.DisableSoundEcho = true;
-    Settings.InterpolatedSound = true;
+    Settings.DisableSoundEcho = !g_settings.echo_enabled;
+    Settings.InterpolatedSound = g_settings.interpolation;
+    Settings.Mute = (g_settings.volume == 0);
 
     S9xInitDisplay();
     S9xInitMemory();
@@ -466,10 +519,13 @@ void __time_critical_func(render_core)(void) {
 #endif
 
         // Update HDMI buffer pointer if Core 0 swapped buffers (double buffering sync)
-        uint32_t current_buf = current_buffer;
-        if (current_buf != last_displayed_buffer) {
-            graphics_set_buffer(SCREEN[current_buf]);
-            last_displayed_buffer = current_buf;
+        // Skip when menu is active — Core 0 manages the HDMI buffer directly.
+        if (!menu_active) {
+            uint32_t current_buf = current_buffer;
+            if (current_buf != last_displayed_buffer) {
+                graphics_set_buffer(SCREEN[current_buf]);
+                last_displayed_buffer = current_buf;
+            }
         }
 
         // Consume next mixed chunk if available; fade out on underrun.
@@ -643,11 +699,11 @@ static void __time_critical_func(emulation_loop)(void) {
     uint32_t audio_acc_us = 0;
     uint32_t audio_last_us = time_us_32();
 
-    // Initialize frameskip from compile-time level
-    set_frameskip_level(FRAMESKIP_LEVEL);
+    // Initialize frameskip from settings (runtime overrides compile-time default)
+    set_frameskip_level(g_settings.frameskip);
     static const char* frameskip_level_names[] = {"NONE (60fps)", "LOW (50fps)", "MEDIUM (30fps)", "HIGH (20fps)", "EXTREME (20fps)"};
     LOG("[frameskip] level=%d (%s) pattern_len=%u mask=0x%02X\n",
-        FRAMESKIP_LEVEL, frameskip_level_names[FRAMESKIP_LEVEL],
+        g_settings.frameskip, frameskip_level_names[g_settings.frameskip],
         (unsigned)frameskip_pattern_len, (unsigned)frameskip_pattern_mask);
 
 #ifdef MURMSNES_PROFILE
@@ -870,6 +926,48 @@ static void __time_critical_func(emulation_loop)(void) {
         if (g_palette_needs_update) {
             S9xFixColourBrightness();
             g_palette_needs_update = false;
+        }
+
+        // Check for settings menu hotkey (Start+Select, F12)
+        // Done here because S9xReadJoypad() already polled input this frame.
+        if (settings_check_hotkey()) {
+            // Tell Core 1 to stop overriding the HDMI buffer
+            menu_active = true;
+            __dmb();
+
+            // Use SCREEN[0] for menu drawing, tell HDMI to display it
+            graphics_set_buffer(SCREEN[0]);
+
+            settings_result_t sresult = settings_menu_show(SCREEN[0]);
+
+            if (sresult == SETTINGS_RESULT_RESET) {
+                watchdog_reboot(0, 0, 10);
+                while(1) tight_loop_contents();
+            }
+
+            // Apply runtime settings (frameskip, echo, etc.)
+            settings_apply_runtime();
+
+            // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[1]
+            current_buffer = 0;
+            GFX.SubScreen = GFX.Screen = SCREEN[0];
+            graphics_set_buffer(SCREEN[0]);
+
+            // Restore emulation palette
+            S9xFixColourBrightness();
+            g_palette_needs_update = false;
+
+            // Re-enable Core 1 buffer management
+            __dmb();
+            menu_active = false;
+
+            // Resync timing
+            next_frame_deadline = time_us_32() + TARGET_FRAME_US;
+            audio_acc_us = 0;
+            audio_last_us = time_us_32();
+            frame_num = 0;
+            consecutive_skipped_frames = 0;
+            continue;
         }
 
         // Advance deadline and frame counter for the next emulated frame.
@@ -1151,8 +1249,8 @@ int main(void) {
     // Load settings from SD card
     LOG("Loading settings...\n");
     settings_load();
-    LOG("Settings loaded (cpu=%d, psram=%d, frameskip=%d)\n",
-        g_settings.cpu_freq, g_settings.psram_freq, g_settings.frameskip);
+    LOG("Settings loaded (volume=%d, frameskip=%d, p1=%d, p2=%d)\n",
+        g_settings.volume, g_settings.frameskip, g_settings.p1_mode, g_settings.p2_mode);
 
     // Clear screen buffer BEFORE HDMI init - DMA starts scanning immediately
     // Use palette index 1 instead of 0 to avoid HDMI issues

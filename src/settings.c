@@ -1,14 +1,15 @@
 /*
- * Settings Implementation for murmsnes
- * Simplified settings menu - placeholder for now
+ * murmsnes Settings Menu Implementation
+ * Self-contained menu with own font/rendering (based on murmnes pattern)
  */
+
 #include "settings.h"
-#include "menu_ui.h"
-#include "ff.h"
+#include "HDMI.h"
 #include "pico/stdlib.h"
-#include "board_config.h"
+#include "hardware/watchdog.h"
 #include "nespad/nespad.h"
 #include "ps2kbd/ps2kbd_wrapper.h"
+#include "ff.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,366 +18,860 @@
 #include "usbhid/usbhid.h"
 #endif
 
-// Global settings instance with defaults
-settings_t g_settings = {
-    .cpu_freq = 504,
-    .psram_freq = 166,
-    .audio_enabled = true,
-    .crt_effect = false,
-    .crt_dim = 60,
-    .frameskip = 3,
-    .gamepad2_mode = GAMEPAD2_MODE_NES,
-};
+/* Screen dimensions */
+#define SCREEN_WIDTH  256
+#define SCREEN_HEIGHT 224
 
-// Menu items
+/* Font constants (5x7 bitmap font) */
+#define FONT_WIDTH  6    /* 5px glyph + 1px spacing */
+#define FONT_HEIGHT 7
+#define LINE_HEIGHT 12
+
+/* UI layout */
+#define MENU_TITLE_Y  16
+#define MENU_START_Y  40
+#define MENU_X        20
+#define VALUE_X       132
+
+/* Palette indices for menu rendering */
+#define PAL_BG      1
+#define PAL_WHITE   2
+#define PAL_YELLOW  3
+#define PAL_GRAY    4
+#define PAL_RED     5
+
+/* ─── Menu pages ──────────────────────────────────────────────────── */
+
 typedef enum {
-    MENU_ITEM_CPU_FREQ,
-    MENU_ITEM_PSRAM_FREQ,
-    MENU_ITEM_AUDIO,
-    MENU_ITEM_CRT_EFFECT,
-    MENU_ITEM_FRAMESKIP,
-    MENU_ITEM_GAMEPAD2,
-    MENU_ITEM_SAVE_RESTART,
-    MENU_ITEM_RESTART,
-    MENU_ITEM_CANCEL,
-    MENU_ITEM_COUNT
-} menu_item_t;
+    PAGE_MAIN,
+    PAGE_VIDEO,
+    PAGE_AUDIO,
+} menu_page_t;
 
-static const char *menu_labels[MENU_ITEM_COUNT] = {
-    "CPU FREQUENCY",
-    "PSRAM FREQUENCY",
-    "AUDIO",
-    "CRT EFFECT",
-    "FRAMESKIP",
-    "GAMEPAD 2",
-    "SAVE AND RESTART",
-    "RESTART",
-    "CANCEL"
+/* Main menu items */
+typedef enum {
+    MAIN_VOLUME,
+    MAIN_CRT,
+    MAIN_FRAMESKIP,
+    MAIN_SEP1,
+    MAIN_PLAYER1,
+    MAIN_PLAYER2,
+    MAIN_SEP2,
+    MAIN_VIDEO,
+    MAIN_AUDIO,
+    MAIN_SEP3,
+    MAIN_BACK_GAME,
+    MAIN_BACK_ROM,
+    MAIN_ITEM_COUNT
+} main_item_t;
+
+/* Video submenu items */
+typedef enum {
+    VIDEO_BG1,
+    VIDEO_BG2,
+    VIDEO_BG3,
+    VIDEO_BG4,
+    VIDEO_SPRITES,
+    VIDEO_TRANSPARENCY,
+    VIDEO_HDMA,
+    VIDEO_SEP,
+    VIDEO_BACK,
+    VIDEO_ITEM_COUNT
+} video_item_t;
+
+/* Audio submenu items */
+typedef enum {
+    AUDIO_ECHO,
+    AUDIO_INTERP,
+    AUDIO_SEP,
+    AUDIO_BACK,
+    AUDIO_ITEM_COUNT
+} audio_item_t;
+
+/* Global settings with defaults */
+settings_t g_settings = {
+    .p1_mode = INPUT_MODE_ANY,
+    .p2_mode = INPUT_MODE_DISABLED,
+    .volume = 100,
+    .crt_effect = 0,
+    .frameskip = 2,  /* medium */
+    .bg_enabled = 0x0F,  /* all BGs on */
+    .sprites_enabled = true,
+    .transparency_enabled = true,
+    .hdma_enabled = true,
+    .echo_enabled = false,
+    .interpolation = true,
 };
 
-// Layout constants
-#define SETTINGS_MENU_Y 50
-#define SETTINGS_LINE_HEIGHT 16
-#define SETTINGS_VALUE_X 180
+/* Edit copy */
+static settings_t edit;
 
-static void draw_menu_item(uint8_t *screen, int item, int selected) {
-    int y = SETTINGS_MENU_Y + item * SETTINGS_LINE_HEIGHT;
-    bool is_selected = (item == selected);
+/* Current page and selection */
+static menu_page_t current_page;
+static int selected;
 
-    // Draw background
-    if (is_selected) {
-        menu_fill_rect(screen, 8, y - 2, MENU_SCREEN_WIDTH - 16, SETTINGS_LINE_HEIGHT, COLOR_WHITE);
-    } else {
-        menu_fill_rect(screen, 8, y - 2, MENU_SCREEN_WIDTH - 16, SETTINGS_LINE_HEIGHT, COLOR_BLACK);
+/* Input mode names */
+static const char *input_mode_names[] = {
+    "ANY", "NES 1", "NES 2", "USB 1", "USB 2", "KEYBOARD", "DISABLED"
+};
+
+/* Frameskip names */
+static const char *frameskip_names[] = {
+    "NONE", "LOW", "MEDIUM", "HIGH", "EXTREME"
+};
+
+/* ─── 5x7 bitmap font ────────────────────────────────────────────── */
+
+static const uint8_t glyphs_5x7[][7] = {
+    [' '-' '] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+    ['!'-' '] = {0x04, 0x04, 0x04, 0x04, 0x00, 0x04, 0x00},
+    ['"'-' '] = {0x0A, 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00},
+    ['#'-' '] = {0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A},
+    ['$'-' '] = {0x04, 0x0F, 0x14, 0x0E, 0x05, 0x1E, 0x04},
+    ['%'-' '] = {0x19, 0x1A, 0x04, 0x08, 0x0B, 0x13, 0x00},
+    ['&'-' '] = {0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D},
+    ['\''-' '] = {0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00},
+    ['('-' '] = {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02},
+    [')'-' '] = {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08},
+    ['*'-' '] = {0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00},
+    ['+'-' '] = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00},
+    [','-' '] = {0x00, 0x00, 0x00, 0x00, 0x0C, 0x04, 0x08},
+    ['-'-' '] = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00},
+    ['.'-' '] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C},
+    ['/'-' '] = {0x01, 0x02, 0x04, 0x08, 0x10, 0x00, 0x00},
+    ['0'-' '] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E},
+    ['1'-' '] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
+    ['2'-' '] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},
+    ['3'-' '] = {0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E},
+    ['4'-' '] = {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02},
+    ['5'-' '] = {0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E},
+    ['6'-' '] = {0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E},
+    ['7'-' '] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+    ['8'-' '] = {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E},
+    ['9'-' '] = {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E},
+    [':'-' '] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00},
+    [';'-' '] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x04, 0x08},
+    ['<'-' '] = {0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02},
+    ['='-' '] = {0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00},
+    ['>'-' '] = {0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08},
+    ['?'-' '] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04},
+    ['@'-' '] = {0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0E},
+    ['A'-' '] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},
+    ['B'-' '] = {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},
+    ['C'-' '] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E},
+    ['D'-' '] = {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E},
+    ['E'-' '] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F},
+    ['F'-' '] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10},
+    ['G'-' '] = {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0E},
+    ['H'-' '] = {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},
+    ['I'-' '] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F},
+    ['J'-' '] = {0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0C},
+    ['K'-' '] = {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11},
+    ['L'-' '] = {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F},
+    ['M'-' '] = {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11},
+    ['N'-' '] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11},
+    ['O'-' '] = {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
+    ['P'-' '] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10},
+    ['Q'-' '] = {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D},
+    ['R'-' '] = {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11},
+    ['S'-' '] = {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},
+    ['T'-' '] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},
+    ['U'-' '] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
+    ['V'-' '] = {0x11, 0x11, 0x11, 0x11, 0x0A, 0x0A, 0x04},
+    ['W'-' '] = {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A},
+    ['X'-' '] = {0x11, 0x0A, 0x04, 0x04, 0x04, 0x0A, 0x11},
+    ['Y'-' '] = {0x11, 0x0A, 0x04, 0x04, 0x04, 0x04, 0x04},
+    ['Z'-' '] = {0x1F, 0x02, 0x04, 0x08, 0x10, 0x10, 0x1F},
+    ['['-' '] = {0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E},
+    ['\\'-' '] = {0x10, 0x08, 0x04, 0x02, 0x01, 0x00, 0x00},
+    [']'-' '] = {0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E},
+    ['^'-' '] = {0x04, 0x0A, 0x11, 0x00, 0x00, 0x00, 0x00},
+    ['_'-' '] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F},
+    ['{'-' '] = {0x02, 0x04, 0x04, 0x08, 0x04, 0x04, 0x02},
+    ['|'-' '] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},
+    ['}'-' '] = {0x08, 0x04, 0x04, 0x02, 0x04, 0x04, 0x08},
+    ['~'-' '] = {0x00, 0x00, 0x08, 0x15, 0x02, 0x00, 0x00},
+};
+
+static const uint8_t *glyph_5x7(char ch) {
+    static const uint8_t glyph_space[7] = {0};
+    int c = (unsigned char)ch;
+    if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
+    int idx = c - ' ';
+    if (idx >= 0 && idx < (int)(sizeof(glyphs_5x7)/sizeof(glyphs_5x7[0])))
+        return glyphs_5x7[idx];
+    return glyph_space;
+}
+
+/* ─── Drawing primitives ──────────────────────────────────────────── */
+
+static void draw_char(uint8_t *screen, int x, int y, char ch, uint8_t color) {
+    const uint8_t *rows = glyph_5x7(ch);
+    for (int row = 0; row < FONT_HEIGHT; ++row) {
+        int yy = y + row;
+        if (yy < 0 || yy >= SCREEN_HEIGHT) continue;
+        uint8_t bits = rows[row];
+        for (int col = 0; col < 5; ++col) {
+            int xx = x + col;
+            if (xx < 0 || xx >= SCREEN_WIDTH) continue;
+            if (bits & (1u << (4 - col)))
+                screen[yy * SCREEN_WIDTH + xx] = color;
+        }
     }
+}
 
-    uint8_t text_color = is_selected ? COLOR_BLACK : COLOR_WHITE;
+static void draw_text(uint8_t *screen, int x, int y, const char *text, uint8_t color) {
+    for (const char *p = text; *p; ++p) {
+        draw_char(screen, x, y, *p, color);
+        x += FONT_WIDTH;
+    }
+}
 
-    // Draw label
-    menu_draw_text(screen, 12, y, menu_labels[item], text_color);
+static int text_width(const char *text) {
+    return (int)strlen(text) * FONT_WIDTH;
+}
 
-    // Draw value (for items with values)
-    char value_str[32] = "";
+static void draw_text_centered(uint8_t *screen, int y, const char *text, uint8_t color) {
+    int x = (SCREEN_WIDTH - text_width(text)) / 2;
+    if (x < 0) x = 0;
+    draw_text(screen, x, y, text, color);
+}
+
+static void draw_hline(uint8_t *screen, int x, int y, int w, uint8_t color) {
+    if (y < 0 || y >= SCREEN_HEIGHT) return;
+    if (x < 0) { w += x; x = 0; }
+    if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
+    if (w <= 0) return;
+    memset(&screen[y * SCREEN_WIDTH + x], color, (size_t)w);
+}
+
+/* ─── Menu palette setup ──────────────────────────────────────────── */
+
+static void setup_menu_palette(void) {
+    graphics_set_palette(0, 0x000000);
+    graphics_set_palette(PAL_BG,     0x080810);    /* dark blue-gray */
+    graphics_set_palette(PAL_WHITE,  0xFFFFFF);
+    graphics_set_palette(PAL_YELLOW, 0xFFFF00);
+    graphics_set_palette(PAL_GRAY,   0x808080);
+    graphics_set_palette(PAL_RED,    0xFF4444);
+    graphics_restore_sync_colors();
+}
+
+/* ─── Input reading (merge all sources) ───────────────────────────── */
+
+#define BTN_UP    0x10
+#define BTN_DOWN  0x20
+#define BTN_LEFT  0x40
+#define BTN_RIGHT 0x80
+#define BTN_A     0x01
+#define BTN_B     0x02
+#define BTN_START 0x08
+#define BTN_SEL   0x04
+
+static int read_menu_buttons(void) {
+    nespad_read();
+    ps2kbd_tick();
+
+    int buttons = 0;
+
+    /* NES/SNES gamepad (either player) */
+    uint32_t pad = nespad_state | nespad_state2;
+    if (pad & DPAD_A)      buttons |= BTN_A;
+    if (pad & DPAD_B)      buttons |= BTN_B;
+    if (pad & DPAD_SELECT) buttons |= BTN_SEL;
+    if (pad & DPAD_START)  buttons |= BTN_START;
+    if (pad & DPAD_UP)     buttons |= BTN_UP;
+    if (pad & DPAD_DOWN)   buttons |= BTN_DOWN;
+    if (pad & DPAD_LEFT)   buttons |= BTN_LEFT;
+    if (pad & DPAD_RIGHT)  buttons |= BTN_RIGHT;
+
+    /* PS/2 keyboard */
+    uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+    kbd |= usbhid_get_kbd_state();
+#endif
+    if (kbd & KBD_STATE_UP)     buttons |= BTN_UP;
+    if (kbd & KBD_STATE_DOWN)   buttons |= BTN_DOWN;
+    if (kbd & KBD_STATE_LEFT)   buttons |= BTN_LEFT;
+    if (kbd & KBD_STATE_RIGHT)  buttons |= BTN_RIGHT;
+    if (kbd & KBD_STATE_A)      buttons |= BTN_A;
+    if (kbd & KBD_STATE_B)      buttons |= BTN_B;
+    if (kbd & KBD_STATE_SELECT) buttons |= BTN_SEL;
+    if (kbd & KBD_STATE_START)  buttons |= BTN_START;
+    if (kbd & KBD_STATE_ESC)    buttons |= BTN_B;  /* ESC = back */
+
+#ifdef USB_HID_ENABLED
+    usbhid_task();
+    if (usbhid_gamepad_connected()) {
+        usbhid_gamepad_state_t gp;
+        usbhid_get_gamepad_state(&gp);
+        if (gp.dpad & 0x01) buttons |= BTN_UP;
+        if (gp.dpad & 0x02) buttons |= BTN_DOWN;
+        if (gp.dpad & 0x04) buttons |= BTN_LEFT;
+        if (gp.dpad & 0x08) buttons |= BTN_RIGHT;
+        if (gp.buttons & 0x0001) buttons |= BTN_A;
+        if (gp.buttons & 0x0002) buttons |= BTN_B;
+        if (gp.buttons & 0x0040) buttons |= BTN_START;
+        if (gp.buttons & 0x0080) buttons |= BTN_SEL;
+    }
+#endif
+
+    return buttons;
+}
+
+/* ─── Item helpers (main menu) ────────────────────────────────────── */
+
+static bool is_separator_main(int item) {
+    return item == MAIN_SEP1 || item == MAIN_SEP2 || item == MAIN_SEP3;
+}
+
+static bool is_selectable_main(int item) {
+    return !is_separator_main(item);
+}
+
+static const char *main_label(int item) {
     switch (item) {
-        case MENU_ITEM_CPU_FREQ:
-            snprintf(value_str, sizeof(value_str), "%d MHZ", g_settings.cpu_freq);
-            break;
-        case MENU_ITEM_PSRAM_FREQ:
-            snprintf(value_str, sizeof(value_str), "%d MHZ", g_settings.psram_freq);
-            break;
-        case MENU_ITEM_AUDIO:
-            snprintf(value_str, sizeof(value_str), "%s", g_settings.audio_enabled ? "ON" : "OFF");
-            break;
-        case MENU_ITEM_CRT_EFFECT:
-            if (g_settings.crt_effect) {
-                snprintf(value_str, sizeof(value_str), "%d%%", g_settings.crt_dim);
-            } else {
-                snprintf(value_str, sizeof(value_str), "OFF");
-            }
-            break;
-        case MENU_ITEM_FRAMESKIP:
-            {
-                const char *skip_names[] = {"NONE", "LOW", "MEDIUM", "HIGH", "EXTREME"};
-                snprintf(value_str, sizeof(value_str), "%s", skip_names[g_settings.frameskip]);
-            }
-            break;
-        case MENU_ITEM_GAMEPAD2:
-            {
-                const char *gp2_names[] = {"NES", "KEYBOARD", "USB", "DISABLED"};
-                snprintf(value_str, sizeof(value_str), "%s", gp2_names[g_settings.gamepad2_mode]);
-            }
-            break;
+        case MAIN_VOLUME:    return "VOLUME";
+        case MAIN_CRT:       return "CRT EFFECT";
+        case MAIN_FRAMESKIP: return "FRAMESKIP";
+        case MAIN_PLAYER1:   return "GAMEPAD 1";
+        case MAIN_PLAYER2:   return "GAMEPAD 2";
+        case MAIN_VIDEO:     return "VIDEO SETTINGS...";
+        case MAIN_AUDIO:     return "AUDIO SETTINGS...";
+        case MAIN_BACK_GAME: return "BACK TO GAME";
+        case MAIN_BACK_ROM:  return "BACK TO ROM SELECTOR";
+        default:             return "";
+    }
+}
+
+static char value_buf[24];
+
+static const char *main_value(int item) {
+    switch (item) {
+        case MAIN_VOLUME:
+            if (edit.volume == 0) return "OFF";
+            snprintf(value_buf, sizeof(value_buf), "%d%%", edit.volume);
+            return value_buf;
+        case MAIN_CRT:
+            if (edit.crt_effect == 0) return "OFF";
+            snprintf(value_buf, sizeof(value_buf), "%d%%", edit.crt_effect);
+            return value_buf;
+        case MAIN_FRAMESKIP:
+            return frameskip_names[edit.frameskip];
+        case MAIN_PLAYER1:
+            return input_mode_names[edit.p1_mode];
+        case MAIN_PLAYER2:
+            return input_mode_names[edit.p2_mode];
         default:
-            break;
-    }
-
-    if (value_str[0]) {
-        menu_draw_text(screen, SETTINGS_VALUE_X, y, value_str, text_color);
+            return NULL;
     }
 }
 
-static void draw_settings_menu(uint8_t *screen, int selected) {
-    // Clear screen
-    menu_clear_screen(screen, COLOR_BLACK);
-
-    // Draw title
-    menu_draw_text_bold_centered(screen, 16, "SETTINGS", COLOR_WHITE);
-
-    // Draw menu items
-    for (int i = 0; i < MENU_ITEM_COUNT; i++) {
-        draw_menu_item(screen, i, selected);
-    }
-
-    // Draw footer help
-    menu_draw_text_centered(screen, MENU_SCREEN_HEIGHT - 16, "D-PAD:SELECT  L/R:CHANGE  B:BACK", COLOR_GRAY);
+/* Check if a specific mode is already taken by the other player */
+static bool mode_taken_by_other(uint8_t mode, uint8_t other_mode) {
+    if (mode == INPUT_MODE_ANY || mode == INPUT_MODE_DISABLED) return false;
+    return mode == other_mode;
 }
 
-static void adjust_setting(int item, int direction) {
+static void main_change_value(int item, int dir) {
     switch (item) {
-        case MENU_ITEM_CPU_FREQ:
-            if (direction > 0) {
-                if (g_settings.cpu_freq == 378) g_settings.cpu_freq = 504;
-                else if (g_settings.cpu_freq < 378) g_settings.cpu_freq = 378;
-            } else {
-                if (g_settings.cpu_freq == 504) g_settings.cpu_freq = 378;
-                else if (g_settings.cpu_freq > 378) g_settings.cpu_freq = 378;
+        case MAIN_VOLUME: {
+            int v = (int)edit.volume + dir * VOLUME_STEP;
+            if (v < VOLUME_MIN) v = VOLUME_MIN;
+            if (v > VOLUME_MAX) v = VOLUME_MAX;
+            edit.volume = (uint8_t)v;
+            break;
+        }
+        case MAIN_CRT: {
+            int v = (int)edit.crt_effect + dir * CRT_STEP;
+            if (v < CRT_MIN) v = CRT_MIN;
+            if (v > CRT_MAX) v = CRT_MAX;
+            edit.crt_effect = (uint8_t)v;
+            break;
+        }
+        case MAIN_FRAMESKIP:
+            if (dir > 0) { if (edit.frameskip < 4) edit.frameskip++; else edit.frameskip = 0; }
+            else { if (edit.frameskip > 0) edit.frameskip--; else edit.frameskip = 4; }
+            break;
+        case MAIN_PLAYER1: {
+            uint8_t m = edit.p1_mode;
+            for (int i = 0; i < INPUT_MODE_COUNT; i++) {
+                m = (uint8_t)((m + INPUT_MODE_COUNT + dir) % INPUT_MODE_COUNT);
+                if (m == INPUT_MODE_DISABLED) continue;
+                if (m == INPUT_MODE_ANY && edit.p2_mode != INPUT_MODE_DISABLED) continue;
+                if (mode_taken_by_other(m, edit.p2_mode)) continue;
+                break;
             }
+            edit.p1_mode = m;
             break;
-
-        case MENU_ITEM_PSRAM_FREQ:
-            if (direction > 0) {
-                if (g_settings.psram_freq == 133) g_settings.psram_freq = 166;
-            } else {
-                if (g_settings.psram_freq == 166) g_settings.psram_freq = 133;
+        }
+        case MAIN_PLAYER2: {
+            uint8_t m = edit.p2_mode;
+            for (int i = 0; i < INPUT_MODE_COUNT; i++) {
+                m = (uint8_t)((m + INPUT_MODE_COUNT + dir) % INPUT_MODE_COUNT);
+                if (m == INPUT_MODE_ANY) continue;
+                if (mode_taken_by_other(m, edit.p1_mode)) continue;
+                break;
             }
-            break;
-
-        case MENU_ITEM_AUDIO:
-            g_settings.audio_enabled = !g_settings.audio_enabled;
-            break;
-
-        case MENU_ITEM_CRT_EFFECT:
-            if (!g_settings.crt_effect) {
-                g_settings.crt_effect = true;
-                g_settings.crt_dim = 60;
-            } else {
-                if (direction > 0) {
-                    g_settings.crt_dim += 10;
-                    if (g_settings.crt_dim > 90) {
-                        g_settings.crt_effect = false;
-                        g_settings.crt_dim = 60;
-                    }
-                } else {
-                    g_settings.crt_dim -= 10;
-                    if (g_settings.crt_dim < 10) {
-                        g_settings.crt_effect = false;
-                        g_settings.crt_dim = 60;
-                    }
+            edit.p2_mode = m;
+            if (edit.p2_mode != INPUT_MODE_DISABLED && edit.p1_mode == INPUT_MODE_ANY) {
+                for (uint8_t c = INPUT_MODE_NES1; c <= INPUT_MODE_KEYBOARD; c++) {
+                    if (c != edit.p2_mode) { edit.p1_mode = c; break; }
                 }
             }
             break;
-
-        case MENU_ITEM_FRAMESKIP:
-            if (direction > 0) {
-                g_settings.frameskip++;
-                if (g_settings.frameskip > 4) g_settings.frameskip = 0;
-            } else {
-                if (g_settings.frameskip == 0) g_settings.frameskip = 4;
-                else g_settings.frameskip--;
-            }
-            break;
-
-        case MENU_ITEM_GAMEPAD2:
-            if (direction > 0) {
-                g_settings.gamepad2_mode++;
-                if (g_settings.gamepad2_mode > 3) g_settings.gamepad2_mode = 0;
-            } else {
-                if (g_settings.gamepad2_mode == 0) g_settings.gamepad2_mode = 3;
-                else g_settings.gamepad2_mode--;
-            }
-            break;
-
+        }
         default:
             break;
     }
 }
 
-void settings_load(void) {
-    FIL file;
-    char line[128];
+/* ─── Item helpers (video submenu) ────────────────────────────────── */
 
-    FRESULT res = f_open(&file, "/snes/settings.ini", FA_READ);
-    if (res != FR_OK) {
-        // Try uppercase path
-        res = f_open(&file, "/SNES/settings.ini", FA_READ);
-        if (res != FR_OK) {
-            // Use defaults
-            return;
+static bool is_separator_video(int item) { return item == VIDEO_SEP; }
+static bool is_selectable_video(int item) { return !is_separator_video(item); }
+
+static const char *video_label(int item) {
+    switch (item) {
+        case VIDEO_BG1:          return "BACKGROUND 1";
+        case VIDEO_BG2:          return "BACKGROUND 2";
+        case VIDEO_BG3:          return "BACKGROUND 3";
+        case VIDEO_BG4:          return "BACKGROUND 4";
+        case VIDEO_SPRITES:      return "SPRITES";
+        case VIDEO_TRANSPARENCY: return "TRANSPARENCY";
+        case VIDEO_HDMA:         return "HDMA";
+        case VIDEO_BACK:         return "BACK";
+        default:                 return "";
+    }
+}
+
+static const char *video_value(int item) {
+    switch (item) {
+        case VIDEO_BG1: return (edit.bg_enabled & 0x01) ? "ON" : "OFF";
+        case VIDEO_BG2: return (edit.bg_enabled & 0x02) ? "ON" : "OFF";
+        case VIDEO_BG3: return (edit.bg_enabled & 0x04) ? "ON" : "OFF";
+        case VIDEO_BG4: return (edit.bg_enabled & 0x08) ? "ON" : "OFF";
+        case VIDEO_SPRITES:      return edit.sprites_enabled ? "ON" : "OFF";
+        case VIDEO_TRANSPARENCY: return edit.transparency_enabled ? "ON" : "OFF";
+        case VIDEO_HDMA:         return edit.hdma_enabled ? "ON" : "OFF";
+        default: return NULL;
+    }
+}
+
+static void video_change_value(int item, int dir) {
+    (void)dir;
+    switch (item) {
+        case VIDEO_BG1: edit.bg_enabled ^= 0x01; break;
+        case VIDEO_BG2: edit.bg_enabled ^= 0x02; break;
+        case VIDEO_BG3: edit.bg_enabled ^= 0x04; break;
+        case VIDEO_BG4: edit.bg_enabled ^= 0x08; break;
+        case VIDEO_SPRITES:      edit.sprites_enabled = !edit.sprites_enabled; break;
+        case VIDEO_TRANSPARENCY: edit.transparency_enabled = !edit.transparency_enabled; break;
+        case VIDEO_HDMA:         edit.hdma_enabled = !edit.hdma_enabled; break;
+        default: break;
+    }
+}
+
+/* ─── Item helpers (audio submenu) ────────────────────────────────── */
+
+static bool is_separator_audio(int item) { return item == AUDIO_SEP; }
+static bool is_selectable_audio(int item) { return !is_separator_audio(item); }
+
+static const char *audio_label(int item) {
+    switch (item) {
+        case AUDIO_ECHO:   return "SOUND ECHO";
+        case AUDIO_INTERP: return "INTERPOLATION";
+        case AUDIO_BACK:   return "BACK";
+        default:           return "";
+    }
+}
+
+static const char *audio_value(int item) {
+    switch (item) {
+        case AUDIO_ECHO:   return edit.echo_enabled ? "ON" : "OFF";
+        case AUDIO_INTERP: return edit.interpolation ? "ON" : "OFF";
+        default: return NULL;
+    }
+}
+
+static void audio_change_value(int item, int dir) {
+    (void)dir;
+    switch (item) {
+        case AUDIO_ECHO:   edit.echo_enabled = !edit.echo_enabled; break;
+        case AUDIO_INTERP: edit.interpolation = !edit.interpolation; break;
+        default: break;
+    }
+}
+
+/* ─── Generic navigation ──────────────────────────────────────────── */
+
+typedef bool (*is_selectable_fn)(int);
+
+static int next_selectable(int sel, int dir, int count, is_selectable_fn fn) {
+    int s = sel;
+    for (int i = 0; i < count; i++) {
+        s += dir;
+        if (s < 0) s = count - 1;
+        if (s >= count) s = 0;
+        if (fn(s)) return s;
+    }
+    return sel;
+}
+
+/* ─── Menu drawing ────────────────────────────────────────────────── */
+
+static void draw_menu(uint8_t *screen, const char *title, int item_count,
+                      const char *(*get_label)(int), const char *(*get_value)(int),
+                      bool (*is_sep)(int), int sel)
+{
+    /* Clear screen */
+    memset(screen, PAL_BG, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    /* Title */
+    draw_text_centered(screen, MENU_TITLE_Y, title, PAL_WHITE);
+    draw_hline(screen, MENU_X, MENU_TITLE_Y + FONT_HEIGHT + 3, SCREEN_WIDTH - 2 * MENU_X, PAL_GRAY);
+
+    /* Menu items */
+    int y = MENU_START_Y;
+    for (int i = 0; i < item_count; i++) {
+        if (is_sep(i)) {
+            draw_hline(screen, MENU_X, y + LINE_HEIGHT / 2, SCREEN_WIDTH - 2 * MENU_X, PAL_GRAY);
+            y += LINE_HEIGHT;
+            continue;
         }
+
+        uint8_t color = (i == sel) ? PAL_YELLOW : PAL_WHITE;
+
+        /* Selection indicator */
+        if (i == sel)
+            draw_char(screen, MENU_X - 10, y, '>', color);
+
+        /* Label */
+        draw_text(screen, MENU_X, y, get_label(i), color);
+
+        /* Value with arrows */
+        const char *val = get_value(i);
+        if (val) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "< %s >", val);
+            draw_text(screen, VALUE_X, y, buf, color);
+        }
+
+        y += LINE_HEIGHT;
     }
 
+    /* Help text */
+    draw_text_centered(screen, SCREEN_HEIGHT - 14, "D-PAD:NAV  L/R:CHANGE  B:BACK", PAL_GRAY);
+}
+
+/* ─── Settings persistence ────────────────────────────────────────── */
+
+#define SETTINGS_PATH "/snes/settings.ini"
+
+void settings_load(void) {
+    FIL file;
+    FRESULT res = f_open(&file, SETTINGS_PATH, FA_READ);
+    if (res != FR_OK) {
+        res = f_open(&file, "/SNES/settings.ini", FA_READ);
+        if (res != FR_OK) return;
+    }
+
+    char line[128];
     while (f_gets(line, sizeof(line), &file)) {
         char *eq = strchr(line, '=');
         if (!eq) continue;
         *eq = '\0';
         char *key = line;
         char *value = eq + 1;
-
-        // Trim whitespace
         while (*key == ' ') key++;
         while (*value == ' ') value++;
         char *end = value + strlen(value) - 1;
         while (end > value && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
 
-        // Parse settings
-        if (strcmp(key, "cpu_freq") == 0) {
-            g_settings.cpu_freq = (uint16_t)atoi(value);
-        } else if (strcmp(key, "psram_freq") == 0) {
-            g_settings.psram_freq = (uint16_t)atoi(value);
-        } else if (strcmp(key, "audio_enabled") == 0) {
-            g_settings.audio_enabled = (atoi(value) != 0);
+        if (strcmp(key, "p1_mode") == 0) {
+            int v = atoi(value);
+            if (v >= 0 && v < INPUT_MODE_COUNT) g_settings.p1_mode = (uint8_t)v;
+        } else if (strcmp(key, "p2_mode") == 0) {
+            int v = atoi(value);
+            if (v >= 0 && v < INPUT_MODE_COUNT) g_settings.p2_mode = (uint8_t)v;
+        } else if (strcmp(key, "volume") == 0) {
+            int v = atoi(value);
+            if (v >= VOLUME_MIN && v <= VOLUME_MAX) g_settings.volume = (uint8_t)v;
         } else if (strcmp(key, "crt_effect") == 0) {
-            g_settings.crt_effect = (atoi(value) != 0);
-        } else if (strcmp(key, "crt_dim") == 0) {
-            g_settings.crt_dim = (uint8_t)atoi(value);
+            int v = atoi(value);
+            if (v >= CRT_MIN && v <= CRT_MAX) g_settings.crt_effect = (uint8_t)v;
         } else if (strcmp(key, "frameskip") == 0) {
-            g_settings.frameskip = (uint8_t)atoi(value);
-        } else if (strcmp(key, "gamepad2_mode") == 0) {
-            g_settings.gamepad2_mode = (uint8_t)atoi(value);
+            int v = atoi(value);
+            if (v >= 0 && v <= 4) g_settings.frameskip = (uint8_t)v;
+        } else if (strcmp(key, "bg_enabled") == 0) {
+            g_settings.bg_enabled = (uint8_t)(atoi(value) & 0x0F);
+        } else if (strcmp(key, "sprites") == 0) {
+            g_settings.sprites_enabled = (atoi(value) != 0);
+        } else if (strcmp(key, "transparency") == 0) {
+            g_settings.transparency_enabled = (atoi(value) != 0);
+        } else if (strcmp(key, "hdma") == 0) {
+            g_settings.hdma_enabled = (atoi(value) != 0);
+        } else if (strcmp(key, "echo") == 0) {
+            g_settings.echo_enabled = (atoi(value) != 0);
+        } else if (strcmp(key, "interpolation") == 0) {
+            g_settings.interpolation = (atoi(value) != 0);
         }
     }
 
     f_close(&file);
+    printf("Settings loaded from %s\n", SETTINGS_PATH);
 }
 
 bool settings_save(void) {
     FIL file;
-
-    FRESULT res = f_open(&file, "/snes/settings.ini", FA_WRITE | FA_CREATE_ALWAYS);
+    FRESULT res = f_open(&file, SETTINGS_PATH, FA_WRITE | FA_CREATE_ALWAYS);
     if (res != FR_OK) {
-        // Try creating directory first
         f_mkdir("/snes");
-        res = f_open(&file, "/snes/settings.ini", FA_WRITE | FA_CREATE_ALWAYS);
-        if (res != FR_OK) {
-            return false;
-        }
+        res = f_open(&file, SETTINGS_PATH, FA_WRITE | FA_CREATE_ALWAYS);
+        if (res != FR_OK) return false;
     }
 
-    f_printf(&file, "cpu_freq=%d\n", g_settings.cpu_freq);
-    f_printf(&file, "psram_freq=%d\n", g_settings.psram_freq);
-    f_printf(&file, "audio_enabled=%d\n", g_settings.audio_enabled ? 1 : 0);
-    f_printf(&file, "crt_effect=%d\n", g_settings.crt_effect ? 1 : 0);
-    f_printf(&file, "crt_dim=%d\n", g_settings.crt_dim);
+    f_printf(&file, "; murmsnes settings\n");
+    f_printf(&file, "p1_mode=%d\n", g_settings.p1_mode);
+    f_printf(&file, "p2_mode=%d\n", g_settings.p2_mode);
+    f_printf(&file, "volume=%d\n", g_settings.volume);
+    f_printf(&file, "crt_effect=%d\n", g_settings.crt_effect);
     f_printf(&file, "frameskip=%d\n", g_settings.frameskip);
-    f_printf(&file, "gamepad2_mode=%d\n", g_settings.gamepad2_mode);
+    f_printf(&file, "bg_enabled=%d\n", g_settings.bg_enabled);
+    f_printf(&file, "sprites=%d\n", g_settings.sprites_enabled ? 1 : 0);
+    f_printf(&file, "transparency=%d\n", g_settings.transparency_enabled ? 1 : 0);
+    f_printf(&file, "hdma=%d\n", g_settings.hdma_enabled ? 1 : 0);
+    f_printf(&file, "echo=%d\n", g_settings.echo_enabled ? 1 : 0);
+    f_printf(&file, "interpolation=%d\n", g_settings.interpolation ? 1 : 0);
 
     f_close(&file);
+    printf("Settings saved to %s\n", SETTINGS_PATH);
     return true;
 }
 
+/* ─── Runtime application ─────────────────────────────────────────── */
+
+/* Defined in main.c */
+extern void set_frameskip_level(uint8_t level);
+
+/* snes9x globals for audio settings */
+#include "snes9x/snes9x.h"
+
 void settings_apply_runtime(void) {
-    // Apply settings that can be changed at runtime
-    // This is a placeholder - actual implementation depends on emulator integration
+    set_frameskip_level(g_settings.frameskip);
+
+    /* Audio settings */
+    Settings.DisableSoundEcho = !g_settings.echo_enabled;
+    Settings.InterpolatedSound = g_settings.interpolation;
+    Settings.Mute = (g_settings.volume == 0);
 }
 
-settings_result_t settings_menu_show(uint8_t *screen_buffer) {
-    int selected = 0;
-    uint32_t prev_buttons = 0;
+/* ─── Hotkey detection ────────────────────────────────────────────── */
 
-    draw_settings_menu(screen_buffer, selected);
+bool settings_check_hotkey(void) {
+    /* NES/SNES gamepad: Start + Select */
+    bool triggered = (nespad_state & DPAD_SELECT) && (nespad_state & DPAD_START);
 
-    // Wait for button release
-    sleep_ms(100);
-
-    while (true) {
-        // Read gamepad
-        nespad_read();
-        uint32_t buttons = nespad_state;
-
-        // Poll PS/2 keyboard
-        ps2kbd_tick();
-        uint16_t kbd_state = ps2kbd_get_state();
+    /* PS/2 / USB keyboard: F12 */
+    uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+    kbd |= usbhid_get_kbd_state();
+#endif
+    if (kbd & KBD_STATE_F12) triggered = true;
 
 #ifdef USB_HID_ENABLED
-        kbd_state |= usbhid_get_kbd_state();
-        usbhid_task();
+    /* USB gamepad: Start + Select */
+    if (usbhid_gamepad_connected()) {
+        usbhid_gamepad_state_t gp;
+        usbhid_get_gamepad_state(&gp);
+        if ((gp.buttons & 0x0040) && (gp.buttons & 0x0080)) triggered = true;
+    }
 #endif
 
-        // Merge keyboard state
-        if (kbd_state & KBD_STATE_UP)    buttons |= DPAD_UP;
-        if (kbd_state & KBD_STATE_DOWN)  buttons |= DPAD_DOWN;
-        if (kbd_state & KBD_STATE_LEFT)  buttons |= DPAD_LEFT;
-        if (kbd_state & KBD_STATE_RIGHT) buttons |= DPAD_RIGHT;
-        if (kbd_state & KBD_STATE_A)     buttons |= DPAD_A;
-        if (kbd_state & KBD_STATE_B)     buttons |= DPAD_B;
-        if (kbd_state & KBD_STATE_L)     buttons |= DPAD_LT;
-        if (kbd_state & KBD_STATE_R)     buttons |= DPAD_RT;
-        if (kbd_state & KBD_STATE_START) buttons |= DPAD_START;
-        if (kbd_state & KBD_STATE_ESC)   buttons |= DPAD_B;
+    return triggered;
+}
 
-        // Detect button press
-        uint32_t buttons_pressed = buttons & ~prev_buttons;
+/* ─── Menu main loop ──────────────────────────────────────────────── */
+
+/* Double-buffered screen arrays from main.c */
+extern uint8_t SCREEN[2][256 * 224];
+
+settings_result_t settings_menu_show(uint8_t *screen_buffer) {
+    (void)screen_buffer;  /* We use SCREEN[0]/SCREEN[1] directly for double-buffering */
+
+    /* Copy settings for editing */
+    edit = g_settings;
+
+    /* Set up palette */
+    setup_menu_palette();
+
+    current_page = PAGE_MAIN;
+    selected = MAIN_VOLUME;
+
+    /* Auto-repeat state */
+    uint32_t hold_counter = 0;
+    const uint32_t REPEAT_DELAY = 10;
+    const uint32_t REPEAT_RATE = 3;
+
+    /* Double-buffered menu: draw into back buffer, then swap to front.
+     * This prevents HDMI from reading a half-drawn (memset'd) frame. */
+    int draw_buf = 0;  /* index of buffer we draw into */
+
+    /* Draw initial frame into buf 0, display it */
+    draw_menu(SCREEN[0], "SETTINGS", MAIN_ITEM_COUNT,
+              main_label, main_value, is_separator_main, selected);
+    graphics_set_buffer(SCREEN[0]);
+    draw_buf = 1;  /* next draw goes into buf 1 */
+
+    /* Wait for all buttons to be released */
+    for (int i = 0; i < 30; i++) {
+        if (read_menu_buttons() == 0) break;
+        sleep_ms(16);
+    }
+    int prev_buttons = read_menu_buttons();
+
+    settings_result_t result = SETTINGS_RESULT_EXIT;
+
+    while (1) {
+        int buttons = read_menu_buttons();
+
+        /* Edge detection + repeat */
+        int pressed = buttons & ~prev_buttons;
+        if (buttons != 0 && buttons == prev_buttons) {
+            hold_counter++;
+            if (hold_counter > REPEAT_DELAY && (hold_counter % REPEAT_RATE) == 0)
+                pressed = buttons;
+        } else {
+            hold_counter = 0;
+        }
         prev_buttons = buttons;
 
-        bool redraw = false;
+        /* Dispatch based on current page */
+        int item_count;
+        is_selectable_fn is_sel;
 
-        // Navigation
-        if (buttons_pressed & DPAD_UP) {
-            selected--;
-            if (selected < 0) selected = MENU_ITEM_COUNT - 1;
-            redraw = true;
+        switch (current_page) {
+            case PAGE_VIDEO:
+                item_count = VIDEO_ITEM_COUNT;
+                is_sel = is_selectable_video;
+                break;
+            case PAGE_AUDIO:
+                item_count = AUDIO_ITEM_COUNT;
+                is_sel = is_selectable_audio;
+                break;
+            default:
+                item_count = MAIN_ITEM_COUNT;
+                is_sel = is_selectable_main;
+                break;
         }
 
-        if (buttons_pressed & DPAD_DOWN) {
-            selected++;
-            if (selected >= MENU_ITEM_COUNT) selected = 0;
-            redraw = true;
-        }
+        /* Navigation */
+        if (pressed & BTN_UP)
+            selected = next_selectable(selected, -1, item_count, is_sel);
+        if (pressed & BTN_DOWN)
+            selected = next_selectable(selected, 1, item_count, is_sel);
 
-        // Adjust values with left/right or L/R
-        if (buttons_pressed & (DPAD_LEFT | DPAD_LT)) {
-            adjust_setting(selected, -1);
-            redraw = true;
+        /* Value change */
+        if (pressed & BTN_LEFT) {
+            switch (current_page) {
+                case PAGE_MAIN:  main_change_value(selected, -1); break;
+                case PAGE_VIDEO: video_change_value(selected, -1); break;
+                case PAGE_AUDIO: audio_change_value(selected, -1); break;
+            }
         }
-
-        if (buttons_pressed & (DPAD_RIGHT | DPAD_RT)) {
-            adjust_setting(selected, 1);
-            redraw = true;
-        }
-
-        // Action buttons
-        if (buttons_pressed & (DPAD_A | DPAD_START)) {
-            switch (selected) {
-                case MENU_ITEM_SAVE_RESTART:
-                    return SETTINGS_RESULT_SAVE_RESTART;
-                case MENU_ITEM_RESTART:
-                    return SETTINGS_RESULT_RESTART;
-                case MENU_ITEM_CANCEL:
-                    return SETTINGS_RESULT_CANCEL;
-                default:
-                    // Toggle/adjust the setting
-                    adjust_setting(selected, 1);
-                    redraw = true;
-                    break;
+        if (pressed & BTN_RIGHT) {
+            switch (current_page) {
+                case PAGE_MAIN:  main_change_value(selected, 1); break;
+                case PAGE_VIDEO: video_change_value(selected, 1); break;
+                case PAGE_AUDIO: audio_change_value(selected, 1); break;
             }
         }
 
-        // Cancel with B
-        if (buttons_pressed & DPAD_B) {
-            return SETTINGS_RESULT_CANCEL;
+        /* Confirm (A / Start) */
+        if (pressed & (BTN_A | BTN_START)) {
+            if (current_page == PAGE_MAIN) {
+                if (selected == MAIN_VIDEO) {
+                    current_page = PAGE_VIDEO;
+                    selected = VIDEO_BG1;
+                } else if (selected == MAIN_AUDIO) {
+                    current_page = PAGE_AUDIO;
+                    selected = AUDIO_ECHO;
+                } else if (selected == MAIN_BACK_GAME) {
+                    g_settings = edit;
+                    settings_save();
+                    result = SETTINGS_RESULT_EXIT;
+                    break;
+                } else if (selected == MAIN_BACK_ROM) {
+                    g_settings = edit;
+                    settings_save();
+                    result = SETTINGS_RESULT_RESET;
+                    break;
+                } else {
+                    /* For value items, A/Start cycles forward */
+                    main_change_value(selected, 1);
+                }
+            } else if (current_page == PAGE_VIDEO) {
+                if (selected == VIDEO_BACK) {
+                    current_page = PAGE_MAIN;
+                    selected = MAIN_VIDEO;
+                } else {
+                    video_change_value(selected, 1);
+                }
+            } else if (current_page == PAGE_AUDIO) {
+                if (selected == AUDIO_BACK) {
+                    current_page = PAGE_MAIN;
+                    selected = MAIN_AUDIO;
+                } else {
+                    audio_change_value(selected, 1);
+                }
+            }
         }
 
-        if (redraw) {
-            draw_settings_menu(screen_buffer, selected);
+        /* Back (B) */
+        if (pressed & BTN_B) {
+            if (current_page == PAGE_VIDEO) {
+                current_page = PAGE_MAIN;
+                selected = MAIN_VIDEO;
+            } else if (current_page == PAGE_AUDIO) {
+                current_page = PAGE_MAIN;
+                selected = MAIN_AUDIO;
+            } else {
+                /* Main page: save and exit */
+                g_settings = edit;
+                settings_save();
+                result = SETTINGS_RESULT_EXIT;
+                break;
+            }
         }
 
-        sleep_ms(50);
+        /* Draw into back buffer, then swap to front */
+        uint8_t *back = SCREEN[draw_buf];
+        switch (current_page) {
+            case PAGE_VIDEO:
+                draw_menu(back, "VIDEO SETTINGS", VIDEO_ITEM_COUNT,
+                          video_label, video_value, is_separator_video, selected);
+                break;
+            case PAGE_AUDIO:
+                draw_menu(back, "AUDIO SETTINGS", AUDIO_ITEM_COUNT,
+                          audio_label, audio_value, is_separator_audio, selected);
+                break;
+            default:
+                draw_menu(back, "SETTINGS", MAIN_ITEM_COUNT,
+                          main_label, main_value, is_separator_main, selected);
+                break;
+        }
+
+        /* Swap: tell HDMI to display the just-drawn buffer */
+        graphics_set_buffer(back);
+        draw_buf ^= 1;  /* next draw goes into the other buffer */
+        sleep_ms(33);  /* ~30fps menu refresh */
     }
 
-    return SETTINGS_RESULT_CANCEL;
-}
+    /* Wait for buttons to be released */
+    for (int i = 0; i < 60; i++) {
+        if (read_menu_buttons() == 0) break;
+        sleep_ms(16);
+    }
 
-bool settings_check_hotkey(void) {
-    nespad_read();
-    return (nespad_state & DPAD_SELECT) && (nespad_state & DPAD_START);
+    return result;
 }

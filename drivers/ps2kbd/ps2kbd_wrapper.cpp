@@ -81,6 +81,9 @@ static unsigned char hid_to_snes(uint8_t code) {
         // ESC = Settings menu / Back
         case 0x29: return SNES_KEY_ESC;    // Escape
 
+        // F12 = Settings menu (alternative)
+        case 0x45: return SNES_KEY_F12;    // F12
+
         default: return 0;
     }
 }
@@ -140,6 +143,7 @@ static uint16_t key_to_state_bit(uint8_t key) {
         case SNES_KEY_START:  return KBD_STATE_START;
         case SNES_KEY_SELECT: return KBD_STATE_SELECT;
         case SNES_KEY_ESC:    return KBD_STATE_ESC;
+        case SNES_KEY_F12:   return KBD_STATE_F12;
         default: return 0;
     }
 }

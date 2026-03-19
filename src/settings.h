@@ -1,6 +1,6 @@
 /*
- * Settings Menu - Runtime configuration for murmsnes
- * Allows user to adjust CPU/PSRAM frequencies, audio, and display options
+ * murmsnes Settings
+ * Runtime configuration with in-game settings menu
  */
 #ifndef SETTINGS_H
 #define SETTINGS_H
@@ -8,62 +8,79 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Settings structure stored in snes/settings.ini
+// Input mode values
+#define INPUT_MODE_ANY      0
+#define INPUT_MODE_NES1     1
+#define INPUT_MODE_NES2     2
+#define INPUT_MODE_USB1     3
+#define INPUT_MODE_USB2     4
+#define INPUT_MODE_KEYBOARD 5
+#define INPUT_MODE_DISABLED 6
+#define INPUT_MODE_COUNT    7
+
+// Volume range (0=OFF, 10-100 step 10)
+#define VOLUME_MIN  0
+#define VOLUME_MAX  100
+#define VOLUME_STEP 10
+
+// CRT effect range (0=OFF, 10-100 step 10)
+#define CRT_MIN  0
+#define CRT_MAX  100
+#define CRT_STEP 10
+
 typedef struct {
-    uint16_t cpu_freq;      // RP2350 frequency: 504 (default), 378
-    uint16_t psram_freq;    // PSRAM frequency: 166 (default), 133
-    bool audio_enabled;     // Master audio: true (default), false
-    bool crt_effect;        // CRT scanlines: false (default), true
-    uint8_t crt_dim;        // CRT dim percentage: 10-90, default 60
-    uint8_t frameskip;      // Frameskip level: 0=none, 1=low, 2=medium, 3=high (default), 4=extreme
-    uint8_t gamepad2_mode;  // Gamepad 2 mode: 0=NES, 1=keyboard, 2=USB, 3=disabled
+    uint8_t p1_mode;              // Player 1 input mode (INPUT_MODE_*)
+    uint8_t p2_mode;              // Player 2 input mode (INPUT_MODE_*)
+    uint8_t volume;               // Master volume 0-100 (0=OFF)
+    uint8_t crt_effect;           // CRT scanline intensity 0-100 (0=OFF)
+    uint8_t frameskip;            // 0=none, 1=low, 2=medium, 3=high, 4=extreme
+
+    // Video settings
+    uint8_t bg_enabled;           // BG1-4 enable bits (bit 0=BG1, ..., bit 3=BG4)
+    bool    sprites_enabled;
+    bool    transparency_enabled;
+    bool    hdma_enabled;
+
+    // Audio settings
+    bool    echo_enabled;         // Sound echo (reverb)
+    bool    interpolation;        // Sound interpolation
 } settings_t;
 
-// Gamepad 2 mode values
-#define GAMEPAD2_MODE_NES      0  // Second NES/SNES gamepad (default)
-#define GAMEPAD2_MODE_KEYBOARD 1  // Keyboard controls P2 instead of P1
-#define GAMEPAD2_MODE_USB      2  // USB gamepad controls P2, NES controls P1
-#define GAMEPAD2_MODE_DISABLED 3  // Gamepad 2 disabled
-
-// Global settings instance (loaded at startup)
 extern settings_t g_settings;
 
-// Settings menu result
 typedef enum {
-    SETTINGS_RESULT_CANCEL,         // User pressed cancel
-    SETTINGS_RESULT_SAVE_RESTART,   // Save settings and restart
-    SETTINGS_RESULT_RESTART,        // Restart without saving
+    SETTINGS_RESULT_EXIT,         // Back to game / back to ROM selector
+    SETTINGS_RESULT_RESET,        // Back to ROM selector (reboot)
 } settings_result_t;
 
 /**
- * Load settings from SD card (snes/settings.ini)
- * If file doesn't exist, uses defaults
+ * Load settings from SD card (/snes/settings.ini)
+ * Uses defaults if file doesn't exist.
  */
 void settings_load(void);
 
 /**
- * Save current settings to SD card (snes/settings.ini)
- * @return true if saved successfully
+ * Save current settings to SD card
  */
 bool settings_save(void);
 
 /**
- * Apply settings that can be changed at runtime
- * (audio enable/disable flags)
+ * Apply settings that affect the emulator at runtime
+ * (frameskip, echo, interpolation, BG/sprite/transparency/HDMA enables)
  */
 void settings_apply_runtime(void);
 
 /**
- * Display settings menu and wait for user interaction
- * @param screen_buffer Pointer to screen buffer (256x224 8-bit palette-indexed)
- * @return Result indicating what action to take
- */
-settings_result_t settings_menu_show(uint8_t *screen_buffer);
-
-/**
- * Check if Start+Select is pressed (call this during emulation loop)
- * @return true if settings menu should be opened
+ * Check if menu hotkey is pressed (Start+Select, ESC, or F12)
+ * Call during emulation loop or ROM selector.
  */
 bool settings_check_hotkey(void);
+
+/**
+ * Display settings menu and block until user exits.
+ * @param screen_buffer 256x224 byte buffer for menu rendering
+ * @return SETTINGS_RESULT_EXIT or SETTINGS_RESULT_RESET
+ */
+settings_result_t settings_menu_show(uint8_t *screen_buffer);
 
 #endif // SETTINGS_H

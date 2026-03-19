@@ -127,10 +127,7 @@ static void draw_info_text(uint8_t *screen) {
     uint32_t sys_hz = clock_get_hz(clk_sys);
     uint32_t cpu_mhz = (sys_hz + 500000) / 1000000;
 
-    // PSRAM clock from settings
-    uint32_t psram_mhz = g_settings.psram_freq;
-
-    snprintf(info_str, sizeof(info_str), "V%s %s %lu/%lu MHZ", MURMSNES_VERSION, board_str, cpu_mhz, psram_mhz);
+    snprintf(info_str, sizeof(info_str), "V%s %s %lu MHZ", MURMSNES_VERSION, board_str, (unsigned long)cpu_mhz);
 
     menu_draw_text_centered(screen, INFO_BASE_Y - LINE_HEIGHT, info_str, COLOR_WHITE);
 }
@@ -530,27 +527,17 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
             // Show settings menu
             settings_result_t result = settings_menu_show(screen_buffer);
 
-            switch (result) {
-                case SETTINGS_RESULT_SAVE_RESTART:
-                    settings_save();
-                    watchdog_reboot(0, 0, 10);
-                    while(1) tight_loop_contents();
-                    break;
-
-                case SETTINGS_RESULT_RESTART:
-                    watchdog_reboot(0, 0, 10);
-                    while(1) tight_loop_contents();
-                    break;
-
-                case SETTINGS_RESULT_CANCEL:
-                default:
-                    // Redraw the ROM selector
-                    menu_clear_screen(screen_buffer, COLOR_BLACK);
-                    draw_demostyle_header(screen_buffer, header_phase);
-                    prev_scroll_offset = -1;  // Force full redraw
-                    prev_buttons = 0;
-                    break;
+            if (result == SETTINGS_RESULT_RESET) {
+                watchdog_reboot(0, 0, 10);
+                while(1) tight_loop_contents();
             }
+
+            // Restore ROM selector palette and redraw
+            menu_ui_init_palette();
+            menu_clear_screen(screen_buffer, COLOR_BLACK);
+            draw_demostyle_header(screen_buffer, header_phase);
+            prev_scroll_offset = -1;  // Force full redraw
+            prev_buttons = 0;
             continue;
         }
 
