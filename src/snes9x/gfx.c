@@ -2858,18 +2858,13 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
             g_render_bg_us[2] += (time_us_32() - _bg2_t0);
 #endif
          }
-         if (BG3)
+         if (BG3 && PPU.BGMode == 0)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(3));
 #ifdef MURMSNES_PROFILE
             uint32_t _bg3_t0 = time_us_32();
 #endif
-            /* Mode 0: BG3 is 2bpp at priorities D+2 and D+5
-             * Mode 1: BG3 is 2bpp, priority depends on BG3Priority bit */
-            if (PPU.BGMode == 0)
-               DrawBackground(PPU.BGMode, 3, D + 2, D + 5);
-            else
-               DrawBackground(PPU.BGMode, 3, D + 2, PPU.BG3Priority ? D + 17 : D + 5);
+            DrawBackground(PPU.BGMode, 3, D + 2, D + 5);
 #ifdef MURMSNES_PROFILE
             g_render_bg_us[3] += (time_us_32() - _bg3_t0);
 #endif

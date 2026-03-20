@@ -146,8 +146,8 @@ uint8_t* GetBasePointer(uint32_t Address);
 #ifdef PICO_ON_DEVICE
 extern uint8_t S9xGetByte_asm(uint32_t Address);
 extern uint16_t S9xGetWord_asm(uint32_t Address);
-#define S9xGetByte S9xGetByte_asm
-#define S9xGetWord S9xGetWord_asm
+// DISABLED: #define S9xGetByte S9xGetByte_asm
+// DISABLED: #define S9xGetWord S9xGetWord_asm
 #endif
 
 extern CMemory Memory;
