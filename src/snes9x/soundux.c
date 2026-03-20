@@ -145,10 +145,6 @@ void S9xSFXAutoReleaseTick(void)
             Channel *ch = &SoundData.channels[c];
             if (ch->state != SOUND_SILENT)
             {
-               extern int printf(const char*, ...);
-               extern volatile uint32_t dsp_log_frame;
-               printf("[SFX-OFF] f=%u ch%d srcn=%02X (timeout)\n",
-                  (unsigned)dsp_log_frame, c, ch->sample_number);
                ch->state = SOUND_SILENT;
                ch->mode = MODE_RELEASE;
                ch->envx = 0;
@@ -176,11 +172,6 @@ void S9xSFXLoopRelease(int channel)
    Channel *ch = &SoundData.channels[channel];
    if (ch->state != SOUND_SILENT)
    {
-      extern int printf(const char*, ...);
-      extern volatile uint32_t dsp_log_frame;
-      printf("[SFX-OFF] f=%u ch%d srcn=%02X (loop)\n",
-         (unsigned)dsp_log_frame, channel, ch->sample_number);
-      /* Hard-silence: skip the slow RELEASE envelope, go straight to silent */
       ch->state = SOUND_SILENT;
       ch->mode = MODE_RELEASE;
       ch->envx = 0;

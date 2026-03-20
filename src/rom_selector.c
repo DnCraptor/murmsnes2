@@ -1,6 +1,9 @@
 /*
- * murmsnes ROM Selector - Cartridge-style display with cover art
- * Ported from murmnes, adapted for SNES (256x224 8-bit palette-indexed HDMI)
+ * MurmSNES - ROM Selector with SNES cartridge display and cover art
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "rom_selector.h"
@@ -437,7 +440,6 @@ static void load_rom_title(int idx) {
 
     char path[128];
     snprintf(path, sizeof(path), "/snes/metadata/descr/%c/%08lX.txt", hex_char, (unsigned long)crc);
-    printf("[SEL] meta %s CRC=%08lX path=%s\n", rom_list[idx].filename, (unsigned long)crc, path);
     FIL fil;
     if (f_open(&fil, path, FA_READ) == FR_OK) {
         /* Reuse img_buf (not in use during metadata loading) */
@@ -482,10 +484,8 @@ static void load_rom_image(int idx) {
 
     FIL fil;
     if (f_open(&fil, path, FA_READ) != FR_OK) {
-        printf("[SEL] image not found: %s\n", path);
         return;
     }
-    printf("[SEL] image found: %s\n", path);
 
     uint8_t hdr[4];
     UINT br;
@@ -496,20 +496,12 @@ static void load_rom_image(int idx) {
     if (w == 0 || w > 320 || h == 0 || h > 240) { f_close(&fil); return; }
 
     uint32_t data_size = (uint32_t)w * h * 2;
-    if (data_size > IMG_BUF_BYTES) {
-        printf("[SEL] image too large: %lux%lu = %lu bytes (max %d)\n",
-               (unsigned long)w, (unsigned long)h, (unsigned long)data_size, IMG_BUF_BYTES);
-        f_close(&fil); return;
-    }
+    if (data_size > IMG_BUF_BYTES) { f_close(&fil); return; }
 
     if (f_read(&fil, img_buf, data_size, &br) == FR_OK && br == data_size) {
         cur_img_pixels = (uint16_t *)img_buf;
         cur_img_w = w;
         cur_img_h = h;
-        printf("[SEL] image %dx%d, first pixels: %04X %04X %04X %04X\n",
-               w, h, cur_img_pixels[0], cur_img_pixels[1], cur_img_pixels[2], cur_img_pixels[3]);
-    } else {
-        printf("[SEL] image read failed (wanted %lu, got %lu)\n", (unsigned long)data_size, (unsigned long)br);
     }
     f_close(&fil);
 }
@@ -903,7 +895,6 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
     memset(rom_meta, 0, MAX_ROMS * sizeof(rom_meta_t));
 
     /* Set up palette and show loading screen immediately */
-    printf("[SEL] palette setup\n");
     setup_selector_palette();
     draw_buf = 0;
     fb = SCREEN[draw_buf];
@@ -911,35 +902,28 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
     fb_text_center(SCREEN_H / 2 - 4, "LOADING...", PAL_WHITE);
     present();           /* show SCREEN[0], set draw_buf=1 */
     sleep_ms(100);       /* let TV sync */
-    printf("[SEL] loading screen shown\n");
 
     /* Scan ROMs (SD access may take time) */
     scan_roms();
-    printf("[SEL] found %d ROMs\n", rom_count);
     if (rom_count == 0) return false;
 
     /* CRC cache */
-    printf("[SEL] loading CRC cache\n");
     load_crc_cache();
     bool cache_dirty = false;
     for (int i = 0; i < rom_count; i++) {
         if (!rom_list[i].crc_valid) {
-            printf("[SEL] computing CRC for %s\n", rom_list[i].filename);
             ensure_crc(i);
             cache_dirty = true;
         }
     }
     if (cache_dirty) {
-        printf("[SEL] saving CRC cache\n");
         save_crc_cache();
     }
 
     /* Load metadata */
-    printf("[SEL] loading metadata\n");
     for (int i = 0; i < rom_count; i++)
         load_rom_title(i);
 
-    printf("[SEL] loading last ROM\n");
     load_last_rom();
 
     int selected = last_selected_rom;
@@ -954,9 +938,7 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
     info_state = INFO_HIDDEN;
     info_anim_frame = 0;
 
-    printf("[SEL] loading initial image\n");
     load_rom_image(selected);
-    printf("[SEL] entering main loop\n");
 
     while (1) {
         draw_scene(selected, frame_count);

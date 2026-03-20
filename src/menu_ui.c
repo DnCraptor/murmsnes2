@@ -1,6 +1,9 @@
 /*
- * Menu UI - Palette-indexed rendering primitives for murmsnes
- * Uses 8-bit palette indices for HDMI output
+ * MurmSNES - Menu UI rendering primitives
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "menu_ui.h"
 #include "HDMI.h"

@@ -1,6 +1,10 @@
 /*
- * murmsnes - SNES Emulator for RP2350
+ * MurmSNES - SNES Emulator for RP2350
  * Based on Snes9x and pico-snes
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
@@ -16,6 +20,7 @@
 
 #include "board_config.h"
 #include "HDMI.h"
+#include "uart_logging.h"
 #include "psram_init.h"
 #include "psram_allocator.h"
 #include "ff.h"
@@ -140,7 +145,11 @@ static void __no_inline_not_in_flash_func(set_flash_timings)(int cpu_mhz) {
 //=============================================================================
 // Logging
 //=============================================================================
+#ifdef MURMSNES_PROFILE
 #define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#define LOG(fmt, ...) ((void)0)
+#endif
 
 #ifdef MURMSNES_PROFILE
 typedef struct {
@@ -864,26 +873,8 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
             }
         }
 
-        /* Simple FPS counter */
-        {
-            static uint32_t fps_frames = 0;
-            static uint32_t fps_rendered = 0;
-            static uint32_t fps_last_us = 0;
-            if (fps_last_us == 0) fps_last_us = _diag_t1;
-            fps_frames++;
-            if (!skip_render) fps_rendered++;
-            uint32_t elapsed = _diag_t1 - fps_last_us;
-            if (elapsed >= 1000000u) {
-                LOG("[FPS] emu=%lu render=%lu\n",
-                    (unsigned long)fps_frames, (unsigned long)fps_rendered);
-                fps_frames = 0;
-                fps_rendered = 0;
-                fps_last_us = _diag_t1;
-            }
-        }
-
-        // Auto-release SFX channels triggered by button presses
-        S9xSFXAutoReleaseTick();
+        (void)_diag_t0;
+        (void)_diag_t1;
 
         // Mix audio on Core 0 (always, even when skipping render), then apply
         // gain/limiting and pack to 32-bit stereo frames.
@@ -1228,13 +1219,10 @@ int main(void) {
         set_sys_clock_khz(252 * 1000, true);
     }
     
-    // Initialize stdio (USB serial)
+    // Initialize UART logging (TX-only, no USB stdio overhead)
+    uart_logging_init();
     stdio_init_all();
-    
-    // Startup delay for USB serial console (4 seconds)
-    for (int i = 0; i < 8; i++) {
-        sleep_ms(500);
-    }
+    uart_logging_register();
     
     LOG("\n\n");
     LOG("========================================\n");

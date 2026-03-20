@@ -1,6 +1,9 @@
 /*
- * murmsnes Settings Menu Implementation
- * Self-contained menu with own font/rendering (based on murmnes pattern)
+ * MurmSNES - Settings Menu
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "settings.h"

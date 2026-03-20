@@ -1,6 +1,9 @@
 /*
- * ROM Selector - Start screen for murmsnes
- * Allows user to browse and select SNES ROMs from SD card
+ * MurmSNES - ROM Selector
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef ROM_SELECTOR_H
 #define ROM_SELECTOR_H

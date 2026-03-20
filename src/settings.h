@@ -1,6 +1,9 @@
 /*
- * murmsnes Settings
- * Runtime configuration with in-game settings menu
+ * MurmSNES - Runtime Settings
+ *
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef SETTINGS_H
 #define SETTINGS_H
