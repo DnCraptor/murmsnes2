@@ -344,6 +344,18 @@ uint32_t S9xReadJoypad(const int32_t port) {
         }
     }
 
+    /* Delay Start by one frame on initial press so the hotkey check
+     * (which runs before S9xMainLoop) can intercept Start+Select
+     * even if the user presses Start slightly before Select. */
+    if (port == 0) {
+        static uint32_t prev_start = 0;
+        uint32_t cur_start = joypad & SNES_START_MASK;
+        if (cur_start && !prev_start) {
+            joypad &= ~SNES_START_MASK;
+        }
+        prev_start = cur_start;
+    }
+
     /* Detect new button presses — notify SFX auto-release system */
     if (port == 0) {
         static uint32_t prev_joypad = 0;
@@ -764,6 +776,76 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
 
         IPPU.RenderThisFrame = !skip_render;
 
+        // Poll input early so settings_check_hotkey sees fresh state
+        nespad_read();
+        ps2kbd_tick();
+#ifdef USB_HID_ENABLED
+        usbhid_task();
+#endif
+
+        // Check for settings menu hotkey BEFORE emulation runs,
+        // so the game never processes buttons on the hotkey frame.
+        if (settings_check_hotkey()) {
+            // Tell Core 1 to stop overriding the HDMI buffer
+            menu_active = true;
+            __dmb();
+
+            // Disable CRT effect for settings menu
+            graphics_set_crt_active(false);
+
+            // Use SCREEN[0] for menu drawing, tell HDMI to display it
+            graphics_set_buffer(SCREEN[0]);
+
+            settings_result_t sresult = settings_menu_show(SCREEN[0], true);
+
+            if (sresult == SETTINGS_RESULT_ROM_SELECT) {
+                // CRT stays off (already disabled above for menu)
+                // Re-enable Core 1 before returning
+                __dmb();
+                menu_active = false;
+                return true;
+            }
+
+            // Wait for all buttons to be released before resuming emulation
+            for (int w = 0; w < 60; w++) {
+                nespad_read();
+                ps2kbd_tick();
+#ifdef USB_HID_ENABLED
+                usbhid_task();
+#endif
+                uint32_t pad = nespad_state | nespad_state2;
+                uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+                kbd |= usbhid_get_kbd_state();
+#endif
+                if (pad == 0 && kbd == 0) break;
+                sleep_ms(16);
+            }
+
+            // Apply runtime settings (frameskip, echo, CRT, etc.)
+            settings_apply_runtime();
+
+            // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[!0]=SCREEN[1]
+            current_buffer = 0;
+            GFX.SubScreen = GFX.Screen = SCREEN[0];
+
+            // Restore emulation palette
+            S9xFixColourBrightness();
+            g_palette_needs_update = false;
+
+            // Re-enable Core 1 buffer management
+            __dmb();
+            menu_active = false;
+
+            // Resync timing
+            next_frame_deadline = time_us_32() + TARGET_FRAME_US;
+            audio_acc_us = 0;
+            audio_last_us = time_us_32();
+            frame_num = 0;
+            consecutive_skipped_frames = 0;
+            continue;
+        }
+
         { extern volatile uint32_t dsp_log_frame; dsp_log_frame++; }
 
         // Run one SNES frame of emulation.
@@ -925,69 +1007,6 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         if (g_palette_needs_update) {
             S9xFixColourBrightness();
             g_palette_needs_update = false;
-        }
-
-        // Check for settings menu hotkey (Start+Select, F12)
-        // Done here because S9xReadJoypad() already polled input this frame.
-        if (settings_check_hotkey()) {
-            // Tell Core 1 to stop overriding the HDMI buffer
-            menu_active = true;
-            __dmb();
-
-            // Disable CRT effect for settings menu
-            graphics_set_crt_active(false);
-
-            // Use SCREEN[0] for menu drawing, tell HDMI to display it
-            graphics_set_buffer(SCREEN[0]);
-
-            settings_result_t sresult = settings_menu_show(SCREEN[0], true);
-
-            if (sresult == SETTINGS_RESULT_ROM_SELECT) {
-                // CRT stays off (already disabled above for menu)
-                // Re-enable Core 1 before returning
-                __dmb();
-                menu_active = false;
-                return true;
-            }
-
-            // Wait for all buttons to be released before resuming emulation
-            for (int w = 0; w < 60; w++) {
-                nespad_read();
-                ps2kbd_tick();
-#ifdef USB_HID_ENABLED
-                usbhid_task();
-#endif
-                uint32_t pad = nespad_state | nespad_state2;
-                uint16_t kbd = ps2kbd_get_state();
-#ifdef USB_HID_ENABLED
-                kbd |= usbhid_get_kbd_state();
-#endif
-                if (pad == 0 && kbd == 0) break;
-                sleep_ms(16);
-            }
-
-            // Apply runtime settings (frameskip, echo, CRT, etc.)
-            settings_apply_runtime();
-
-            // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[!0]=SCREEN[1]
-            current_buffer = 0;
-            GFX.SubScreen = GFX.Screen = SCREEN[0];
-
-            // Restore emulation palette
-            S9xFixColourBrightness();
-            g_palette_needs_update = false;
-
-            // Re-enable Core 1 buffer management
-            __dmb();
-            menu_active = false;
-
-            // Resync timing
-            next_frame_deadline = time_us_32() + TARGET_FRAME_US;
-            audio_acc_us = 0;
-            audio_last_us = time_us_32();
-            frame_num = 0;
-            consecutive_skipped_frames = 0;
-            continue;
         }
 
         // Advance deadline and frame counter for the next emulated frame.
