@@ -1323,6 +1323,9 @@ int main(void) {
     LOG("USB HID initialized\n");
 #endif
 
+    // Show welcome screen on first boot
+    welcome_screen_show();
+
     // Main loop: ROM selector -> load -> emulate -> repeat
     char rom_path[MAX_ROM_PATH];
 

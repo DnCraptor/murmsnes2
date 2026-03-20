@@ -1088,6 +1088,213 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
     return false;
 }
 
+/* ─── SNES controller pixel art (37x17) ───────────────────────────── */
+
+/* Palette:  0=transparent  1=black  2=white  3=light_gray  4=body_gray
+ *           5=dark_gray  6=blue  7=green  8=red  9=yellow */
+#define LOGO_W 37
+#define LOGO_H 17
+
+static const uint8_t snes_logo[LOGO_H][LOGO_W] = {
+    {0,0,0,0,0,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0},
+    {0,0,0,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,0,0},
+    {0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0},
+    {0,1,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,4,1,0},
+    {0,1,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,1,0},
+    {1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,4,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,6,6,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,1,1,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,7,7,4,4,4,4,8,8,4,4,4,1},
+    {1,4,4,4,1,1,1,1,1,1,1,4,4,4,1,1,1,4,4,1,1,1,4,4,4,7,7,4,4,4,4,8,8,4,4,4,1},
+    {1,4,4,4,4,4,1,1,1,4,4,4,4,4,1,1,1,4,4,1,1,1,4,4,4,4,4,4,9,9,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,4,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,9,9,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1},
+    {1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1},
+    {0,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1,0},
+    {0,0,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1,0,0},
+    {0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0},
+};
+
+/* Map logo pixel values to framebuffer palette indices */
+#define PAL_LOGO_BODY   226
+#define PAL_LOGO_LGRAY  227
+#define PAL_LOGO_DGRAY  228
+#define PAL_LOGO_BLUE   229
+#define PAL_LOGO_GREEN  230
+#define PAL_LOGO_RED    231
+#define PAL_LOGO_YELLOW 232
+#define PAL_LOGO_CIRCLE 233
+#define PAL_LOGO_SHADOW 234
+
+static const uint8_t logo_pal_map[10] = {
+    0,              /* 0 = transparent */
+    PAL_BLACK,      /* 1 = black */
+    PAL_WHITE,      /* 2 = white */
+    PAL_LOGO_LGRAY, /* 3 = light gray */
+    PAL_LOGO_BODY,  /* 4 = body gray */
+    PAL_LOGO_DGRAY, /* 5 = dark gray */
+    PAL_LOGO_BLUE,  /* 6 = blue */
+    PAL_LOGO_GREEN, /* 7 = green */
+    PAL_LOGO_RED,   /* 8 = red */
+    PAL_LOGO_YELLOW,/* 9 = yellow */
+};
+
+static void setup_welcome_palette(void) {
+    setup_selector_palette();
+    graphics_set_palette(PAL_LOGO_BODY,   0xB0B0B8);
+    graphics_set_palette(PAL_LOGO_LGRAY,  0xD0D0D8);
+    graphics_set_palette(PAL_LOGO_DGRAY,  0x606068);
+    graphics_set_palette(PAL_LOGO_BLUE,   0x4040E0);
+    graphics_set_palette(PAL_LOGO_GREEN,  0x30C030);
+    graphics_set_palette(PAL_LOGO_RED,    0xE03030);
+    graphics_set_palette(PAL_LOGO_YELLOW, 0xE0D020);
+    graphics_set_palette(PAL_LOGO_CIRCLE, 0x909090);
+    graphics_set_palette(PAL_LOGO_SHADOW, 0x606060);
+    graphics_restore_sync_colors();
+}
+
+static void draw_filled_circle(int cx, int cy, int r, uint8_t color) {
+    int r2 = r * r;
+    for (int y = cy - r; y <= cy + r; y++) {
+        if (y < 0 || y >= SCREEN_H) continue;
+        int dy = y - cy;
+        int dx_sq = r2 - dy * dy;
+        int dx = 0;
+        while ((dx + 1) * (dx + 1) <= dx_sq) dx++;
+        int x0 = cx - dx;
+        int x1 = cx + dx;
+        if (x0 < 0) x0 = 0;
+        if (x1 >= SCREEN_W) x1 = SCREEN_W - 1;
+        if (x0 <= x1) memset(&fb[y * SCREEN_W + x0], color, x1 - x0 + 1);
+    }
+}
+
+static void draw_logo_3x(int ox, int oy) {
+    for (int y = 0; y < LOGO_H; y++) {
+        for (int x = 0; x < LOGO_W; x++) {
+            uint8_t px = snes_logo[y][x];
+            if (px == 0) continue;
+            uint8_t c = logo_pal_map[px];
+            int dx = ox + x * 3;
+            int dy = oy + y * 3;
+            for (int sy = 0; sy < 3; sy++)
+                for (int sx = 0; sx < 3; sx++)
+                    fb_pixel(dx + sx, dy + sy, c);
+        }
+    }
+}
+
+static void draw_logo_shadow(int cx, int cy, int bounce, int circle_r) {
+    int logo_h_half = (LOGO_H * 3 / 2);
+    int shadow_cy = cy + logo_h_half + 4 - bounce;
+    int base_rx = (LOGO_W * 3 / 2) - 4;
+    int base_ry = 3;
+    int rx = base_rx + (-bounce);
+    int ry = base_ry + (-bounce) / 2;
+    if (rx < 4) rx = 4;
+    if (ry < 2) ry = 2;
+    int cr2 = circle_r * circle_r;
+    for (int y = shadow_cy - ry; y <= shadow_cy + ry; y++) {
+        if (y < 0 || y >= SCREEN_H) continue;
+        int dy_s = y - shadow_cy;
+        int dy_c = y - cy;
+        if (dy_c * dy_c > cr2) continue;
+        for (int x = cx - rx; x <= cx + rx; x++) {
+            if (x < 0 || x >= SCREEN_W) continue;
+            int dx_s = x - cx;
+            int dx_c = x - cx;
+            if (dx_s * dx_s * ry * ry + dy_s * dy_s * rx * rx < rx * rx * ry * ry) {
+                if (dx_c * dx_c + dy_c * dy_c <= cr2) {
+                    fb_pixel(x, y, PAL_LOGO_SHADOW);
+                }
+            }
+        }
+    }
+}
+
+static int welcome_bounce(uint32_t frame) {
+    int t = (int)(frame % 36);
+    if (t < 6) return 0;
+    if (t < 9) return 1;
+    if (t < 15) return 2;
+    if (t < 18) return 1;
+    if (t < 24) return 0;
+    if (t < 27) return -1;
+    if (t < 33) return -2;
+    return -1;
+}
+
+/* ─── Welcome screen ──────────────────────────────────────────────── */
+
+void welcome_screen_show(void) {
+    setup_welcome_palette();
+    draw_buf = 0;
+    fb = SCREEN[draw_buf];
+
+#ifdef MURMSNES_VERSION
+    char version_str[16];
+    snprintf(version_str, sizeof(version_str), "V%s", MURMSNES_VERSION);
+#else
+    const char *version_str = "V?";
+#endif
+
+    uint32_t frame = 0;
+    int prev_buttons = 0xFF;
+
+    while (1) {
+        fb_fill(PAL_BG);
+
+        /* Circle behind the logo */
+        int circle_cx = SCREEN_W / 2;
+        int circle_cy = 60;
+        int circle_r = 44;
+        draw_filled_circle(circle_cx, circle_cy, circle_r, PAL_LOGO_CIRCLE);
+
+        /* SNES controller with bounce and shadow */
+        int bounce = (frame >= 60) ? welcome_bounce(frame) : 0;
+        int logo_x = circle_cx - (LOGO_W * 3 / 2);
+        int logo_y = circle_cy - (LOGO_H * 3 / 2) + bounce;
+        draw_logo_shadow(circle_cx, circle_cy, bounce, circle_r);
+        draw_logo_3x(logo_x, logo_y);
+
+        /* Text */
+        fb_text_center(110, "MURMSNES", PAL_WHITE);
+        fb_text_center(124, version_str, PAL_GRAY);
+        fb_text_center(144, "BY MIKHAIL MATVEEV", PAL_GRAY);
+        fb_text_center(156, "<XTREME@RH1.TECH>", PAL_GRAY);
+        fb_text_center(176, "RH1.TECH", PAL_GRAY);
+
+        /* Blinking "PRESS START" after 2 seconds */
+        if (frame >= 120 && ((frame / 30) & 1) == 0) {
+            fb_text_center(SCREEN_H - 16, "PRESS START", PAL_WHITE);
+        }
+
+        present();
+        frame++;
+        sleep_ms(16);
+
+        /* Check input after initial settle */
+        if (frame >= 120) {
+            int buttons = read_selector_buttons();
+            int pressed = buttons & ~prev_buttons;
+            prev_buttons = buttons;
+            if (pressed & (BTN_A | BTN_START))
+                break;
+        } else {
+            prev_buttons = read_selector_buttons();
+        }
+
+        /* Auto-continue after 10 seconds */
+        if (frame >= 600) break;
+    }
+
+    /* Wait for buttons to be released */
+    for (int i = 0; i < 60; i++) {
+        if (read_selector_buttons() == 0) break;
+        sleep_ms(16);
+    }
+}
+
 /* ─── SD error screen ─────────────────────────────────────────────── */
 
 void rom_selector_show_sd_error(uint8_t *screen_buffer, int error_code) {

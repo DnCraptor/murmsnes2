@@ -28,4 +28,10 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
  */
 void rom_selector_show_sd_error(uint8_t *screen_buffer, int error_code);
 
+/**
+ * Show welcome/splash screen with SNES controller logo.
+ * Waits for user input or auto-continues after timeout.
+ */
+void welcome_screen_show(void);
+
 #endif // ROM_SELECTOR_H
