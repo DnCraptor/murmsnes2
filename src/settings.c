@@ -93,7 +93,7 @@ settings_t g_settings = {
     .p1_mode = INPUT_MODE_ANY,
     .p2_mode = INPUT_MODE_DISABLED,
     .volume = 100,
-    .crt_effect = 0,
+    .crt_effect = false,
     .frameskip = 2,  /* medium */
     .bg_enabled = 0x0F,  /* all BGs on */
     .sprites_enabled = true,
@@ -361,9 +361,7 @@ static const char *main_value(int item) {
             snprintf(value_buf, sizeof(value_buf), "%d%%", edit.volume);
             return value_buf;
         case MAIN_CRT:
-            if (edit.crt_effect == 0) return "OFF";
-            snprintf(value_buf, sizeof(value_buf), "%d%%", edit.crt_effect);
-            return value_buf;
+            return edit.crt_effect ? "ON" : "OFF";
         case MAIN_FRAMESKIP:
             return frameskip_names[edit.frameskip];
         case MAIN_PLAYER1:
@@ -390,13 +388,9 @@ static void main_change_value(int item, int dir) {
             edit.volume = (uint8_t)v;
             break;
         }
-        case MAIN_CRT: {
-            int v = (int)edit.crt_effect + dir * CRT_STEP;
-            if (v < CRT_MIN) v = CRT_MIN;
-            if (v > CRT_MAX) v = CRT_MAX;
-            edit.crt_effect = (uint8_t)v;
+        case MAIN_CRT:
+            edit.crt_effect = !edit.crt_effect;
             break;
-        }
         case MAIN_FRAMESKIP:
             if (dir > 0) { if (edit.frameskip < 4) edit.frameskip++; else edit.frameskip = 0; }
             else { if (edit.frameskip > 0) edit.frameskip--; else edit.frameskip = 4; }
@@ -607,8 +601,7 @@ void settings_load(void) {
             int v = atoi(value);
             if (v >= VOLUME_MIN && v <= VOLUME_MAX) g_settings.volume = (uint8_t)v;
         } else if (strcmp(key, "crt_effect") == 0) {
-            int v = atoi(value);
-            if (v >= CRT_MIN && v <= CRT_MAX) g_settings.crt_effect = (uint8_t)v;
+            g_settings.crt_effect = (atoi(value) != 0);
         } else if (strcmp(key, "frameskip") == 0) {
             int v = atoi(value);
             if (v >= 0 && v <= 4) g_settings.frameskip = (uint8_t)v;
@@ -644,7 +637,7 @@ bool settings_save(void) {
     f_printf(&file, "p1_mode=%d\n", g_settings.p1_mode);
     f_printf(&file, "p2_mode=%d\n", g_settings.p2_mode);
     f_printf(&file, "volume=%d\n", g_settings.volume);
-    f_printf(&file, "crt_effect=%d\n", g_settings.crt_effect);
+    f_printf(&file, "crt_effect=%d\n", g_settings.crt_effect ? 1 : 0);
     f_printf(&file, "frameskip=%d\n", g_settings.frameskip);
     f_printf(&file, "bg_enabled=%d\n", g_settings.bg_enabled);
     f_printf(&file, "sprites=%d\n", g_settings.sprites_enabled ? 1 : 0);
@@ -673,6 +666,9 @@ void settings_apply_runtime(void) {
     Settings.DisableSoundEcho = !g_settings.echo_enabled;
     Settings.InterpolatedSound = g_settings.interpolation;
     Settings.Mute = (g_settings.volume == 0);
+
+    /* CRT effect */
+    graphics_set_crt_active(g_settings.crt_effect);
 }
 
 /* ─── Hotkey detection ────────────────────────────────────────────── */

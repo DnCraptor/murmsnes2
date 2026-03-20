@@ -21,6 +21,17 @@ enum graphics_mode_t hdmi_graphics_mode = GRAPHICSMODE_DEFAULT;
 // Graphics buffer pointer in scratch memory for fast DMA handler access
 static uint8_t * __scratch_y("hdmi_ptr") graphics_buffer = NULL;
 
+// CRT scanline effect: when active, every other display line is black
+static bool __scratch_y("hdmi_crt") crt_active = false;
+
+void graphics_set_crt_active(bool active) {
+    crt_active = active;
+}
+
+bool graphics_get_crt_active(void) {
+    return crt_active;
+}
+
 void graphics_set_buffer(uint8_t *buffer) {
     graphics_buffer = buffer;
 }
@@ -323,14 +334,30 @@ static void __scratch_y("hdmi_driver") dma_handler_HDMI() {
     // Increment line counter with wrap at 524 (same as pico-snes-master)
     line = line >= 524 ? 0 : line + 1;
 
-    if ((line & 1) == 0) return;
+    // CRT scanline effect: on even lines in the content area, fill a black
+    // scanline buffer instead of skipping.  This produces alternating
+    // content / black output lines (classic CRT look).
+    #define VMARGIN_SCANLINES 16
+    #define CONTENT_SCANLINES (224*2)
+    if ((line & 1) == 0) {
+        if (crt_active) {
+            int sl = (int)line - VMARGIN_SCANLINES;
+            if (sl >= 0 && sl < CONTENT_SCANLINES) {
+                inx_buf_dma++;
+                uint8_t* activ_buf = (uint8_t *)dma_lines[inx_buf_dma & 1];
+                hdmi_memset_fast(activ_buf + 72, 0, 320);
+                hdmi_memset_fast(activ_buf + 48, BASE_HDMI_CTRL_INX, 24);
+                hdmi_memset_fast(activ_buf, BASE_HDMI_CTRL_INX + 1, 48);
+                hdmi_memset_fast(activ_buf + 392, BASE_HDMI_CTRL_INX, 8);
+            }
+        }
+        return;
+    }
     inx_buf_dma++;
 
     uint8_t* activ_buf = (uint8_t *)dma_lines[inx_buf_dma & 1];
 
     // 224 SNES lines centered in 240 active lines: 16 blank scanlines top, 448 content, 16 blank bottom
-    #define VMARGIN_SCANLINES 16
-    #define CONTENT_SCANLINES (224*2)
     if (line < (VMARGIN_SCANLINES + CONTENT_SCANLINES + VMARGIN_SCANLINES) ) {
         // Active video region
         uint8_t* output_buffer = activ_buf + 72; // Align sync

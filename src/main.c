@@ -934,19 +934,23 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
             menu_active = true;
             __dmb();
 
+            // Disable CRT effect for settings menu
+            graphics_set_crt_active(false);
+
             // Use SCREEN[0] for menu drawing, tell HDMI to display it
             graphics_set_buffer(SCREEN[0]);
 
             settings_result_t sresult = settings_menu_show(SCREEN[0], true);
 
             if (sresult == SETTINGS_RESULT_ROM_SELECT) {
+                // CRT stays off (already disabled above for menu)
                 // Re-enable Core 1 before returning
                 __dmb();
                 menu_active = false;
                 return true;
             }
 
-            // Apply runtime settings (frameskip, echo, etc.)
+            // Apply runtime settings (frameskip, echo, CRT, etc.)
             settings_apply_runtime();
 
             // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[!0]=SCREEN[1]
@@ -1358,11 +1362,17 @@ int main(void) {
 
         gpio_put(PICO_DEFAULT_LED_PIN, 0);  // LED off = running
 
+        // Enable CRT effect if configured
+        graphics_set_crt_active(g_settings.crt_effect);
+
         // Run emulation (returns true if user wants ROM selector)
         bool back_to_selector = emulation_loop();
 
         if (back_to_selector) {
             LOG("Returning to ROM selector...\n");
+
+            // Disable CRT effect for ROM selector
+            graphics_set_crt_active(false);
 
             // Free all PSRAM allocated during this session
             psram_restore_session();

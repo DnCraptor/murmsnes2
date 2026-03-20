@@ -69,6 +69,9 @@ void graphics_set_mode(enum graphics_mode_t mode);
 struct video_mode_t graphics_get_video_mode(int mode);
 void graphics_set_bgcolor(uint32_t color888);
 
+void graphics_set_crt_active(bool active);
+bool graphics_get_crt_active(void);
+
 
 static const uint32_t tab_color[11][16] =
 {

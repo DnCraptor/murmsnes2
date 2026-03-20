@@ -23,16 +23,11 @@
 #define VOLUME_MAX  100
 #define VOLUME_STEP 10
 
-// CRT effect range (0=OFF, 10-100 step 10)
-#define CRT_MIN  0
-#define CRT_MAX  100
-#define CRT_STEP 10
-
 typedef struct {
     uint8_t p1_mode;              // Player 1 input mode (INPUT_MODE_*)
     uint8_t p2_mode;              // Player 2 input mode (INPUT_MODE_*)
     uint8_t volume;               // Master volume 0-100 (0=OFF)
-    uint8_t crt_effect;           // CRT scanline intensity 0-100 (0=OFF)
+    bool    crt_effect;           // CRT scanline effect ON/OFF
     uint8_t frameskip;            // 0=none, 1=low, 2=medium, 3=high, 4=extreme
 
     // Video settings
