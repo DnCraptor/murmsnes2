@@ -535,7 +535,10 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
             menu_clear_screen(screen_buffer, COLOR_BLACK);
             draw_demostyle_header(screen_buffer, header_phase);
             prev_scroll_offset = -1;  // Force full redraw
-            prev_buttons = 0;
+
+            // Read current button state so held buttons aren't treated as new presses
+            nespad_read();
+            prev_buttons = nespad_state;
             continue;
         }
 
@@ -543,6 +546,13 @@ bool rom_selector_show(char *selected_rom_path, size_t buffer_size, uint8_t *scr
         if (buttons_pressed & (DPAD_A | DPAD_START)) {
             if (!(buttons & DPAD_SELECT)) {
                 if (rom_count > 0) {
+                    // Wait for buttons to be released before loading ROM
+                    for (int w = 0; w < 60; w++) {
+                        nespad_read();
+                        ps2kbd_tick();
+                        if ((nespad_state | nespad_state2) == 0 && ps2kbd_get_state() == 0) break;
+                        sleep_ms(16);
+                    }
                     snprintf(selected_rom_path, buffer_size, "/snes/%s", rom_list[selected].filename);
                     return true;
                 }

@@ -950,6 +950,22 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
                 return true;
             }
 
+            // Wait for all buttons to be released before resuming emulation
+            for (int w = 0; w < 60; w++) {
+                nespad_read();
+                ps2kbd_tick();
+#ifdef USB_HID_ENABLED
+                usbhid_task();
+#endif
+                uint32_t pad = nespad_state | nespad_state2;
+                uint16_t kbd = ps2kbd_get_state();
+#ifdef USB_HID_ENABLED
+                kbd |= usbhid_get_kbd_state();
+#endif
+                if (pad == 0 && kbd == 0) break;
+                sleep_ms(16);
+            }
+
             // Apply runtime settings (frameskip, echo, CRT, etc.)
             settings_apply_runtime();
 
