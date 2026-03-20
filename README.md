@@ -9,7 +9,7 @@ Based on [Snes9x](https://github.com/snes9xgit/snes9x) / [snes9x2010](https://gi
 | Contra III | Prince of Persia |
 |:---:|:---:|
 | ![Contra III](screenshots/screen1.png) | ![Prince of Persia](screenshots/screen2.png) |
-| **Lion Ling** | **ROM Selector** |
+| **Lion King** | **ROM Selector** |
 | ![Lion King](screenshots/screen3.png) | ![ROM Selector](screenshots/screen4.png) |
 
 ## Supported Boards
