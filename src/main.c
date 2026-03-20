@@ -518,12 +518,11 @@ void __time_critical_func(render_core)(void) {
         apu_core1_run_batch();
 #endif
 
-        // Update HDMI buffer pointer if Core 0 swapped buffers (double buffering sync)
-        // Skip when menu is active — Core 0 manages the HDMI buffer directly.
+        // Skip HDMI buffer management when menu is active —
+        // Core 0 controls current_buffer directly for the menu.
         if (!menu_active) {
             uint32_t current_buf = current_buffer;
             if (current_buf != last_displayed_buffer) {
-                graphics_set_buffer(SCREEN[current_buf]);
                 last_displayed_buffer = current_buf;
             }
         }
@@ -948,10 +947,9 @@ static void __time_critical_func(emulation_loop)(void) {
             // Apply runtime settings (frameskip, echo, etc.)
             settings_apply_runtime();
 
-            // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[1]
+            // Restore emulation: renderer writes to SCREEN[0], HDMI shows SCREEN[!0]=SCREEN[1]
             current_buffer = 0;
             GFX.SubScreen = GFX.Screen = SCREEN[0];
-            graphics_set_buffer(SCREEN[0]);
 
             // Restore emulation palette
             S9xFixColourBrightness();

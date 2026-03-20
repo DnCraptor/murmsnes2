@@ -695,6 +695,7 @@ bool settings_check_hotkey(void) {
 
 /* Double-buffered screen arrays from main.c */
 extern uint8_t SCREEN[2][256 * 224];
+extern volatile uint32_t current_buffer;
 
 settings_result_t settings_menu_show(uint8_t *screen_buffer) {
     (void)screen_buffer;  /* We use SCREEN[0]/SCREEN[1] directly for double-buffering */
@@ -717,10 +718,11 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
      * This prevents HDMI from reading a half-drawn (memset'd) frame. */
     int draw_buf = 0;  /* index of buffer we draw into */
 
-    /* Draw initial frame into buf 0, display it */
+    /* Draw initial frame into buf 0, display it.
+     * DMA displays SCREEN[!current_buffer], so set current_buffer=1 to show SCREEN[0]. */
     draw_menu(SCREEN[0], "SETTINGS", MAIN_ITEM_COUNT,
               main_label, main_value, is_separator_main, selected);
-    graphics_set_buffer(SCREEN[0]);
+    current_buffer = 1;
     draw_buf = 1;  /* next draw goes into buf 1 */
 
     /* Wait for all buttons to be released */
@@ -861,8 +863,9 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
                 break;
         }
 
-        /* Swap: tell HDMI to display the just-drawn buffer */
-        graphics_set_buffer(back);
+        /* Swap: tell HDMI to display the just-drawn buffer.
+         * DMA displays SCREEN[!current_buffer], so set current_buffer = !draw_buf. */
+        current_buffer = !draw_buf;
         draw_buf ^= 1;  /* next draw goes into the other buffer */
         sleep_ms(33);  /* ~30fps menu refresh */
     }
