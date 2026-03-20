@@ -14,3 +14,4 @@ third_party/
 # OS
 .DS_Store
 /release
+.githooks/
