@@ -117,111 +117,25 @@ static uint8_t  sfx_killed_ttl[8] = {0}; /* frames to keep remembering killed sr
 
 void S9xNotifyButtonPress(void)
 {
-   sfx_btn_pending = 4;  /* watch for KON in the next 4 frames */
+   /* Disabled: SFX auto-release was incorrectly killing music notes
+    * in games like Prince of Persia. Real SNES has no such mechanism. */
 }
 
 void S9xSFXAutoReleaseTick(void)
 {
-   /* Decrement button window */
-   if (sfx_btn_pending > 0)
-      sfx_btn_pending--;
-
-   /* Decrement killed-srcn memory */
-   for (int c = 0; c < 8; c++)
-      if (sfx_killed_ttl[c] > 0)
-         sfx_killed_ttl[c]--;
-
-   /* Check each SFX-marked channel — release after timeout.
-    * Channels that hit a BRR loop point get released sooner (see mixer). */
-   uint8_t mask = 1;
-   for (int c = 0; c < 8; c++, mask <<= 1)
-   {
-      if (sfx_channel_mask & mask)
-      {
-         sfx_timer[c]++;
-         if (sfx_timer[c] >= SFX_RELEASE_FRAMES)
-         {
-            /* Timeout fallback — hard-silence regardless */
-            Channel *ch = &SoundData.channels[c];
-            if (ch->state != SOUND_SILENT)
-            {
-               ch->state = SOUND_SILENT;
-               ch->mode = MODE_RELEASE;
-               ch->envx = 0;
-               ch->envxx = 0;
-               ch->left_vol_level = 0;
-               ch->right_vol_level = 0;
-               sfx_killed_srcn[c] = ch->sample_number;
-               sfx_killed_ttl[c] = SFX_KILLED_MEMORY;
-            }
-            sfx_channel_mask &= ~mask;
-            sfx_timer[c] = 0;
-         }
-      }
-   }
+   /* Disabled: SFX auto-release was killing music notes. */
 }
 
-/* Called from the mixer when a SFX-tagged channel hits a BRR loop point.
- * Immediately silences the channel to prevent audible repeats. */
+/* Disabled: was killing music loops. */
 void S9xSFXLoopRelease(int channel)
 {
-   uint8_t mask = 1 << channel;
-   if (!(sfx_channel_mask & mask))
-      return;
-
-   Channel *ch = &SoundData.channels[channel];
-   if (ch->state != SOUND_SILENT)
-   {
-      ch->state = SOUND_SILENT;
-      ch->mode = MODE_RELEASE;
-      ch->envx = 0;
-      ch->envxx = 0;
-      ch->left_vol_level = 0;
-      ch->right_vol_level = 0;
-      /* Remember this srcn so re-KON of the same sample gets re-tagged */
-      sfx_killed_srcn[channel] = ch->sample_number;
-      sfx_killed_ttl[channel] = SFX_KILLED_MEMORY;
-   }
-   sfx_channel_mask &= ~mask;
-   sfx_timer[channel] = 0;
+   (void)channel;
 }
 
-/* Called from apu.c when KON happens — check if it's during button window
- * or if this srcn was recently killed (game re-triggering a stuck SFX). */
+/* Called from apu.c when KON happens — disabled (was killing music notes). */
 void S9xSFXCheckKON(int channel)
 {
-   if (sfx_btn_pending > 0)
-   {
-      sfx_channel_mask |= (1 << channel);
-      sfx_timer[channel] = 0;
-      return;
-   }
-
-   /* Check if this KON re-triggers a recently killed srcn (on any channel).
-    * If so, immediately silence — don't let it play even one cycle. */
-   uint8_t srcn = SoundData.channels[channel].sample_number;
-   for (int c = 0; c < 8; c++)
-   {
-      if (sfx_killed_ttl[c] > 0 && sfx_killed_srcn[c] == srcn)
-      {
-         Channel *ch = &SoundData.channels[channel];
-         ch->state = SOUND_SILENT;
-         ch->mode = MODE_RELEASE;
-         ch->envx = 0;
-         ch->envxx = 0;
-         ch->left_vol_level = 0;
-         ch->right_vol_level = 0;
-         /* Refresh the kill memory */
-         sfx_killed_srcn[channel] = srcn;
-         sfx_killed_ttl[channel] = SFX_KILLED_MEMORY;
-         sfx_channel_mask &= ~(1 << channel);
-         sfx_timer[channel] = 0;
-         return;
-      }
-   }
-
-   /* Not a button-triggered or re-triggered KON — clear SFX mark */
-   sfx_channel_mask &= ~(1 << channel);
+   (void)channel;
 }
 
 static uint32_t AttackRate [16] =
@@ -910,9 +824,7 @@ static INLINE void MixStereoSegment(int32_t buf_offset, int32_t sample_count)
                         dir = S9xGetSampleAddress(ch->sample_number);
                         ch->block_pointer = READ_WORD(dir + 2);
 
-                        if (sfx_channel_mask & (1 << J)) {
-                           S9xSFXLoopRelease(J);
-                        }
+                        /* SFX auto-release removed — was killing music loops */
                      }
                   }
                   DecodeBlock(ch);
