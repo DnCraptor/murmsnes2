@@ -285,11 +285,16 @@ Original MurmSNES code is licensed under the GNU General Public License v3.0. Th
 | Project | Author(s) | License | Used For |
 |---------|-----------|---------|----------|
 | [Snes9x](https://github.com/snes9xgit/snes9x) / [snes9x2010](https://github.com/libretro/snes9x2010) | Gary Henderson, Jerremy Koot, et al. | Snes9x freeware | SNES emulation core |
+| [pico-snes](https://github.com/xrip/pico-snes) | xrip | — | Initial RP2350 port |
 | [FatFS](http://elm-chan.org/fsw/ff/) | ChaN | Custom permissive | FAT32 filesystem |
 | [pico_fatfs_test](https://github.com/elehobica/pico_fatfs_test) | Elehobica | BSD-2-Clause | SD card PIO-SPI driver |
 | [PS/2 keyboard driver](https://github.com/mrmltr) | mrmltr | GPL-2.0 | PS/2 keyboard PIO driver |
 | [TinyUSB](https://github.com/hathach/tinyusb) | Ha Thach | MIT | USB HID host driver |
 | [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk) | Raspberry Pi Foundation | BSD-3-Clause | Hardware abstraction layer |
+
+Special thanks to:
+- [Gavin](https://t.me/DynaMight1124) — SNES metadata and support
+- [Murmulator community](https://github.com/xrip) — USB HID, HDMI, PSRAM, and audio drivers
 
 ## Author
 
