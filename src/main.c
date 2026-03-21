@@ -125,11 +125,9 @@ char g_rom_name[64];
 //=============================================================================
 // Flash timing configuration for overclocking
 //=============================================================================
-#define FLASH_MAX_FREQ_MHZ 88
-
-static void __no_inline_not_in_flash_func(set_flash_timings)(int cpu_mhz) {
+static void __no_inline_not_in_flash_func(set_flash_timings)(int cpu_mhz, int flash_max_mhz) {
     const int clock_hz = cpu_mhz * 1000000;
-    const int max_flash_freq = FLASH_MAX_FREQ_MHZ * 1000000;
+    const int max_flash_freq = flash_max_mhz * 1000000;
     
     int divisor = (clock_hz + max_flash_freq - (max_flash_freq >> 4) - 1) / max_flash_freq;
     if (divisor == 1 && clock_hz >= 166000000) {
@@ -1256,7 +1254,7 @@ int main(void) {
 #if CPU_CLOCK_MHZ > 252
     vreg_disable_voltage_limit();
     vreg_set_voltage(CPU_VOLTAGE);
-    set_flash_timings(CPU_CLOCK_MHZ);
+    set_flash_timings(CPU_CLOCK_MHZ, 88);
     sleep_ms(100);
 #endif
     

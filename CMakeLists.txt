@@ -9,8 +9,8 @@ set(BOARD_VARIANT "M1" CACHE STRING "Board variant: M1 or M2")
 # CPU overclock configuration (252, 378, 504 MHz)
 set(CPU_SPEED "504" CACHE STRING "CPU clock in MHz: 252, 378, 504")
 
-# PSRAM speed configuration (84, 100, 133, 166 MHz target)
-set(PSRAM_SPEED "166" CACHE STRING "PSRAM max frequency in MHz: 84, 100, 133, 166")
+# PSRAM speed configuration (84, 100, 133 MHz target)
+set(PSRAM_SPEED "133" CACHE STRING "PSRAM max frequency in MHz: 84, 100, 133")
 
 # Lightweight on-device profiling (prints once per second over UART)
 option(MURMSNES_PROFILE "Enable periodic performance profiling output" OFF)
