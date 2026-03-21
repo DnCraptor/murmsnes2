@@ -112,6 +112,7 @@ static volatile uint32_t audio_cons_seq = 0; // total chunks consumed
 //=============================================================================
 static volatile bool core1_ready = false;
 static volatile bool menu_active = false;  // When true, Core 1 stops overriding HDMI buffer
+static bool hotkey_consumed = false;       // Set when hotkey opens menu (tells Start buffer to discard)
 
 //=============================================================================
 // FatFS
@@ -356,16 +357,42 @@ uint32_t S9xReadJoypad(const int32_t port) {
         }
     }
 
-    /* Delay Start by one frame on initial press so the hotkey check
-     * (which runs before S9xMainLoop) can intercept Start+Select
-     * even if the user presses Start slightly before Select. */
+
+    /* Buffer Start and Select: don't send either to the game while held.
+     * On release, send one frame of the button UNLESS the other was also
+     * pressed during the hold (= hotkey combo → discard both).
+     * hotkey_consumed is set by the main loop when it opens the menu. */
     if (port == 0) {
-        static uint32_t prev_start = 0;
-        uint32_t cur_start = joypad & SNES_START_MASK;
-        if (cur_start && !prev_start) {
-            joypad &= ~SNES_START_MASK;
+        static bool start_held = false;
+        static bool select_held = false;
+        static bool combo_seen = false;
+        bool cur_start = (joypad & SNES_START_MASK) != 0;
+        bool cur_select = (joypad & SNES_SELECT_MASK) != 0;
+
+        if (hotkey_consumed) {
+            combo_seen = true;
+            hotkey_consumed = false;
         }
-        prev_start = cur_start;
+
+        /* While either hotkey button is held, suppress both and watch for combo */
+        if (cur_start || cur_select) {
+            if (cur_start && cur_select)
+                combo_seen = true;
+            if (cur_start)  { joypad &= ~SNES_START_MASK;  start_held = true; }
+            if (cur_select) { joypad &= ~SNES_SELECT_MASK; select_held = true; }
+        }
+
+        /* When BOTH are released, decide what to do */
+        if (!cur_start && !cur_select && (start_held || select_held)) {
+            if (!combo_seen) {
+                /* Solo press — inject one frame */
+                if (start_held)  joypad |= SNES_START_MASK;
+                if (select_held) joypad |= SNES_SELECT_MASK;
+            }
+            start_held = false;
+            select_held = false;
+            combo_seen = false;
+        }
     }
 
     /* Detect new button presses — notify SFX auto-release system */
@@ -792,6 +819,8 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         // Check for settings menu hotkey BEFORE emulation runs,
         // so the game never processes buttons on the hotkey frame.
         if (settings_check_hotkey()) {
+            hotkey_consumed = true;
+
             // Tell Core 1 to stop overriding the HDMI buffer
             menu_active = true;
             __dmb();
@@ -838,6 +867,20 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
             // Restore emulation palette
             S9xFixColourBrightness();
             g_palette_needs_update = false;
+
+            // Clear stale joypad state so the game doesn't see buttons
+            // from before the menu on the first frame of resumed emulation
+            // (game can read $4218/$4016 before VBlank updates them)
+            for (int j = 0; j < 5; j++)
+                IPPU.Joypads[j] = 0;
+            Memory.FillRAM[0x4218] = 0;
+            Memory.FillRAM[0x4219] = 0;
+            Memory.FillRAM[0x421a] = 0;
+            Memory.FillRAM[0x421b] = 0;
+            Memory.FillRAM[0x421c] = 0;
+            Memory.FillRAM[0x421d] = 0;
+            Memory.FillRAM[0x421e] = 0;
+            Memory.FillRAM[0x421f] = 0;
 
             // Re-enable Core 1 buffer management
             __dmb();
