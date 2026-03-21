@@ -42,8 +42,12 @@ echo -e "Last version: ${YELLOW}${LAST_MAJOR}.$(printf '%02d' $LAST_MINOR)${NC}"
 echo ""
 
 DEFAULT_VERSION="${NEXT_MAJOR}.$(printf '%02d' $NEXT_MINOR)"
-read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
-INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+if [[ -n "$1" ]]; then
+    INPUT_VERSION="$1"
+else
+    read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
+    INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+fi
 
 if [[ "$INPUT_VERSION" == *"."* ]]; then
     MAJOR="${INPUT_VERSION%%.*}"
