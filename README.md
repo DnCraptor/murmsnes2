@@ -16,10 +16,10 @@ Based on [Snes9x](https://github.com/snes9xgit/snes9x) / [snes9x2010](https://gi
 
 This firmware supports two board layouts (**M1** and **M2**) on RP2350-based boards with integrated HDMI, SD card, and PSRAM:
 
-- **[Murmulator](https://murmulator.ru)** - A compact retro-computing platform based on RP Pico 2, designed for emulators and classic games.
-- **[FRANK](https://rh1.tech/projects/frank?area=about)** - A versatile development board based on RP Pico 2 with HDMI output and extensive I/O options.
+- **[Murmulator](https://murmulator.ru)** — RP Pico 2 board with HDMI, SD card, and PSRAM
+- **[FRANK](https://rh1.tech/projects/frank?area=about)** — RP Pico 2 development board with HDMI and additional I/O
 
-Both boards provide all necessary peripherals out of the box (no additional wiring required).
+Both boards have the required peripherals built in — no additional wiring needed.
 
 ## Features
 
