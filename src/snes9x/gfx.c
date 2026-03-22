@@ -353,26 +353,17 @@ void S9xStartScreenRefresh(void)
          IPPU.Interlace = (Memory.FillRAM[0x2133] & 1);
       if (PPU.BGMode == 5 || PPU.BGMode == 6 || IPPU.Interlace)
       {
-         IPPU.RenderedScreenWidth = 512;
-         IPPU.DoubleWidthPixels = true;
-         IPPU.HalfWidthPixels = false;
-
-         if (IPPU.Interlace)
-         {
-            IPPU.RenderedScreenHeight = PPU.ScreenHeight << 1;
-            IPPU.DoubleHeightPixels = true;
-            GFX.Pitch2 = GFX.RealPitch;
-            GFX.Pitch = GFX.RealPitch * 2;
-            GFX.PPL = GFX.PPLx2 = GFX.RealPitch;
-         }
-         else
-         {
-            IPPU.RenderedScreenHeight = PPU.ScreenHeight;
-            GFX.Pitch2 = GFX.Pitch = GFX.RealPitch;
-            IPPU.DoubleHeightPixels = false;
-            GFX.PPL = GFX.Pitch;  // 8-bit: PPL == Pitch
-            GFX.PPLx2 = GFX.Pitch * 2;
-         }
+         /* Our framebuffer is 256px wide (8-bit indexed).  Mode 5/6 and
+          * interlace want 512px — force half-width rendering to stay
+          * within the 256-byte pitch and avoid buffer overflows. */
+         IPPU.RenderedScreenWidth = 256;
+         IPPU.DoubleWidthPixels = false;
+         IPPU.HalfWidthPixels = true;
+         IPPU.RenderedScreenHeight = PPU.ScreenHeight;
+         IPPU.DoubleHeightPixels = false;
+         GFX.Pitch2 = GFX.Pitch = GFX.RealPitch;
+         GFX.PPL = GFX.Pitch;
+         GFX.ZPitch = GFX.Pitch;
       }
       else
       {
@@ -3064,72 +3055,17 @@ void S9xUpdateScreen(void)
 
    if (PPU.BGMode == 5 || PPU.BGMode == 6 || IPPU.Interlace || IPPU.DoubleHeightPixels)
    {
+      /* Our 8-bit framebuffer is 256px wide — Mode 5/6 and interlace
+       * would need 512px and overflow the buffer.  Force half-width
+       * rendering instead. x2 stays 1, RenderedScreenWidth stays 256. */
       if (PPU.BGMode == 5 || PPU.BGMode == 6 || IPPU.Interlace)
       {
-         IPPU.RenderedScreenWidth = 512;
-         x2 = 2;
+         IPPU.RenderedScreenWidth = 256;
+         IPPU.HalfWidthPixels = true;
+         IPPU.DoubleWidthPixels = false;
+         /* x2 stays 1 */
       }
-
-      if (IPPU.DoubleHeightPixels)
-      {
-         starty = GFX.StartY * 2;
-         endy = GFX.EndY * 2 + 1;
-      }
-
-      if ((PPU.BGMode == 5 || PPU.BGMode == 6) && !IPPU.DoubleWidthPixels)
-      {
-         /* The game has switched from lo-res to hi-res mode part way down
-          * the screen. Scale any existing lo-res pixels on screen */
-#ifdef MURMSNES_PROFILE
-         uint32_t __scale_t0 = time_us_32();
-#endif
-         uint32_t y;
-         for (y = 0; y < starty; y++)
-         {
-            int32_t x;
-            uint8_t* p = GFX.Screen + y * GFX.Pitch2 + 255;
-            uint8_t* q = p + 255;
-            for (x = 255; x >= 0; x--, p--, q -= 2)
-               q[0] = q[1] = p[0];
-         }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
-#endif
-         IPPU.DoubleWidthPixels = true;
-         IPPU.HalfWidthPixels = false;
-      }
-      /* BJ: And we have to change the height if Interlace gets set,
-       *     too. */
-      if (IPPU.Interlace && !IPPU.DoubleHeightPixels)
-      {
-   #ifdef MURMSNES_PROFILE
-         uint32_t __scale_t0 = time_us_32();
-   #endif
-         int32_t y;
-
-         starty                    = GFX.StartY * 2;
-         endy                      = GFX.EndY * 2 + 1;
-         IPPU.RenderedScreenHeight = PPU.ScreenHeight << 1;
-         IPPU.DoubleHeightPixels   = true;
-         GFX.Pitch2                = GFX.RealPitch;
-         GFX.Pitch                 = GFX.RealPitch * 2;
-         GFX.PPL                   = GFX.RealPitch;  // 8-bit: PPL == RealPitch
-         GFX.PPLx2                 = GFX.RealPitch * 2;
-
-         /* The game has switched from non-interlaced to interlaced mode
-          * part way down the screen. Scale everything. */
-         for (y = (int32_t) GFX.StartY - 1; y >= 0; y--)
-         {
-            /* memmove converted: Same malloc, different addresses, and identical addresses at line 0 [Neb]
-             * DS2 DMA notes: This code path is unused [Neb] */
-            memcpy(GFX.Screen + y * 2 * GFX.Pitch2, GFX.Screen + y * GFX.Pitch2, GFX.Pitch2);
-            /* memmove converted: Same malloc, different addresses [Neb] */
-            memcpy(GFX.Screen + (y * 2 + 1) * GFX.Pitch2, GFX.Screen + y * GFX.Pitch2, GFX.Pitch2);
-         }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
-#endif
-      }
+      /* Ignore interlace height doubling — our buffer can't hold it */
    }
 
    black = BLACK * 0x01010101u;  // 8-bit: replicate byte to all 4 positions
@@ -3590,10 +3526,12 @@ void S9xUpdateScreen(void)
       }
    }
 
-   if (PPU.BGMode != 5 && PPU.BGMode != 6 && IPPU.DoubleWidthPixels)
+   if (PPU.BGMode != 5 && PPU.BGMode != 6 && IPPU.DoubleWidthPixels
+       && GFX.Pitch2 >= 512)
    {
       /* Mixture of background modes used on screen - scale width
-       * of all non-mode 5 and 6 pixels. */
+       * of all non-mode 5 and 6 pixels.
+       * Guard: only if buffer pitch is wide enough (512+). */
    #ifdef MURMSNES_PROFILE
       uint32_t __scale_t0 = time_us_32();
    #endif
