@@ -8,6 +8,8 @@
 #define free snes_free
 #endif
 
+#include <stdio.h>
+
 #include "snes9x.h"
 
 #include "memmap.h"
@@ -467,6 +469,8 @@ void S9xEndScreenRefresh(void)
       GFX.Pitch = GFX.Pitch2 = GFX.RealPitch;
       GFX.PPL = GFX.Pitch;  // 8-bit: PPL == Pitch
    }
+
+
 
    if (CPU.SRAMModified)
       CPU.SRAMModified = false;

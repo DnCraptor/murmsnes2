@@ -85,6 +85,7 @@ set(SNES9X_SOURCES
     src/snes9x/cpuops.c
     src/snes9x/dma.c
     src/snes9x/dsp.c
+    src/snes9x/fxemu.c
     src/snes9x/getset.c
     src/snes9x/colormath.c
     src/snes9x/gfx.c
@@ -146,6 +147,7 @@ target_compile_definitions(murmsnes PRIVATE
     MURMSNES_VERSION="${MURMSNES_VERSION_STR}"
     NO_WINDOW_CLIPPING=1
     SIMPLE_COLOR_MATH=1
+    NO_ZERO_LUT=1
 )
 
 if(MURMSNES_PROFILE)

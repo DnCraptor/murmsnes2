@@ -9,6 +9,14 @@
 #include "dma.h"
 #include "srtc.h"
 #include "obc1.h"
+#include "fxemu.h"
+
+extern FxInit_s SuperFX;
+
+static void S9xResetSuperFX(void)
+{
+   FxReset(&SuperFX);
+}
 
 void S9xResetCPU()
 {
@@ -71,6 +79,8 @@ static void CommonS9xReset()
       ResetOBC1();
    if (Settings.C4)
       S9xInitC4();
+   if (Settings.SuperFX)
+      S9xResetSuperFX();
 }
 
 void S9xReset()

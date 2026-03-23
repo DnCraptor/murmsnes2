@@ -505,16 +505,36 @@ static bool load_rom_from_sd(const char *filename) {
     }
     
     // Allocate ROM buffer in PSRAM
+    // Peek at ROM header to detect SuperFX before allocating
     size_t alloc_size = (file_size + 0xFFFF) & ~0xFFFF;  // Round up to 64KB boundary
-    Memory.ROM = (uint8_t *)psram_malloc(alloc_size + 0x10200);  // Extra for mapping
+    bool might_be_superfx = false;
+    if (file_size >= 0x8000) {
+        uint8_t rom_type_byte = 0;
+        UINT peek_br;
+        /* Cartridge type is at ROM offset 0x7FD6 (NOT 0x7FD5 which is map mode).
+         * Account for possible 512-byte copier header. */
+        size_t hdr_off = (file_size & 0x3FF) == 0x200 ? 0x200 : 0;
+        f_lseek(&file, hdr_off + 0x7FD6);
+        f_read(&file, &rom_type_byte, 1, &peek_br);
+        f_lseek(&file, 0);
+        might_be_superfx = (rom_type_byte & 0xF0) == 0x10;
+    }
+    if (might_be_superfx && alloc_size < 0x600000)
+        alloc_size = 0x600000;  // SuperFX needs ROM duplication at +2MB offset
+    else
+        alloc_size += 0x10000;  // Extra 64KB for mapping safety (non-SuperFX)
+    alloc_size += 0x200;  // Header alignment
+    Memory.ROM = (uint8_t *)psram_malloc(alloc_size);
     if (Memory.ROM == NULL) {
         LOG("Failed to allocate ROM buffer (%lu bytes)!\n", (unsigned long)alloc_size);
         f_close(&file);
         return false;
     }
-    LOG("Allocated %lu bytes for ROM in PSRAM\n", (unsigned long)(alloc_size + 0x10200));
-    
-    Memory.ROM_AllocSize = file_size;
+    LOG("Allocated %lu bytes for ROM in PSRAM%s\n", (unsigned long)alloc_size,
+        might_be_superfx ? " (SuperFX)" : "");
+
+    Memory.ROM_AllocSize = file_size; /* Content size for ROM parser; buffer may be larger */
+    Settings.ForceSuperFX = might_be_superfx; /* Hint for S9xInitMemory to allocate 128KB SRAM */
     
     // Read ROM into buffer
     res = f_read(&file, Memory.ROM, file_size, &bytes_read);

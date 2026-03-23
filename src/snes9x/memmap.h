@@ -83,7 +83,7 @@ enum
 enum
 {
    RAM_SIZE = 0x20000,
-   SRAM_SIZE = 0x10000, // 0x20000,
+   SRAM_SIZE = 0x10000, /* Default 64KB; SuperFX games get 128KB via ForceSuperFX */
    VRAM_SIZE = 0x10000,
    FILLRAM_SIZE = 0x8000,
 };

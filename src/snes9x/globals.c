@@ -9,6 +9,9 @@
 #include "dma.h"
 #include "gfx.h"
 #include "soundux.h"
+#include "fxemu.h"
+
+FxInit_s SuperFX;
 
 SICPU ICPU;
 SCPUState CPU;

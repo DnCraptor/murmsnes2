@@ -9,7 +9,11 @@
 #include "display.h"
 #include "gfx.h"
 #include "srtc.h"
+#include "fxemu.h"
 #include <stdio.h>
+
+extern FxInit_s SuperFX;
+static void S9xSetSuperFX(uint8_t Byte, uint16_t Address);
 
 #if PICO_ON_DEVICE
 #include "graphics.h"
@@ -622,7 +626,10 @@ void S9xSetPPU(uint8_t Byte, uint16_t Address)
       if (Address == 0x2801 && Settings.SRTC) /* Dai Kaijyu Monogatari II */
          S9xSetSRTC(Byte, Address);
       else if (Address >= 0x3000 && Address < 0x3300)
+      {
+         S9xSetSuperFX(Byte, Address);
          return;
+      }
    }
    Memory.FillRAM[Address] = Byte;
 }
@@ -2028,5 +2035,66 @@ void S9xUpdateJoypads()
       Memory.FillRAM [0x421a] = 0x0E;
       Memory.FillRAM [0x421b] = 0;
       S9xUpdateJustifiers();
+   }
+}
+
+/* --- SuperFX integration --- */
+
+static void S9xSetSuperFX(uint8_t Byte, uint16_t Address)
+{
+   if (!Settings.SuperFX)
+      return;
+
+   uint8_t old_fill_ram = Memory.FillRAM[Address];
+   Memory.FillRAM[Address] = Byte;
+
+   switch (Address)
+   {
+      case 0x3030: /* SFR low byte */
+         if ((old_fill_ram ^ Byte) & FLG_G)
+         {
+            if (Byte & FLG_G)
+               S9xSuperFXExec();
+            else
+               FxFlushCache();
+         }
+         break;
+      case 0x3034: /* PBR */
+      case 0x3036: /* ROMBR */
+         Memory.FillRAM[Address] &= 0x7f;
+         break;
+      case 0x3038: /* SCBR */
+         fx_dirtySCBR();
+         break;
+      case 0x303c: /* RAMBR */
+         fx_updateRamBank(Byte);
+         break;
+      case 0x301f: /* R15 high byte write → start GSU */
+         Memory.FillRAM[0x3000 + GSU_SFR] |= FLG_G;
+         S9xSuperFXExec();
+         break;
+      default:
+         break;
+   }
+}
+
+void S9xSuperFXExec(void)
+{
+   if (!Settings.SuperFX)
+      return;
+
+   if ((Memory.FillRAM[0x3000 + GSU_SFR] & FLG_G) &&
+       (Memory.FillRAM[0x3000 + GSU_SCMR] & 0x18) == 0x18)
+   {
+      /* Cycle-limited execution: ~350/700 instructions per HBlank, matching
+       * real hardware where the SuperFX runs in parallel with the CPU.
+       * Games (DOOM) depend on the SuperFX taking multiple frames to render,
+       * so that their IRQ handlers initialize state AFTER init code runs. */
+      FxEmulate((Memory.FillRAM[0x3000 + GSU_CLSR] & 1) ? 700 : 350);
+
+      int32_t GSUStatus = Memory.FillRAM[0x3000 + GSU_SFR]
+                        | (Memory.FillRAM[0x3000 + GSU_SFR + 1] << 8);
+      if ((GSUStatus & (FLG_G | FLG_IRQ)) == FLG_IRQ)
+         S9xSetIRQ(GSU_IRQ_SOURCE);
    }
 }

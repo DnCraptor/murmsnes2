@@ -8,6 +8,7 @@
 #include "gfx.h"
 #include "apu.h"
 #include "dma.h"
+#include <stdio.h>
 #include "../settings.h"
 
 /* Mark main loop as hot for RAM execution on Pico */
@@ -111,6 +112,8 @@ void S9xDoHBlankProcessing()
          IPPU.HDMA = S9xDoHDMA(IPPU.HDMA);
       break;
    case HBLANK_END_EVENT:
+      if (Settings.SuperFX)
+         S9xSuperFXExec();
 #ifndef USE_BLARGG_APU
       CPU.Cycles -= Settings.H_Max;
 #if defined(PICO_ON_DEVICE) && defined(APU_ON_CORE1) && APU_ON_CORE1
@@ -189,7 +192,18 @@ void S9xDoHBlankProcessing()
          S9xStartScreenRefresh();
       }
       if (CPU.V_Counter >= FIRST_VISIBLE_LINE && CPU.V_Counter < PPU.ScreenHeight + FIRST_VISIBLE_LINE)
+      {
+         /* SuperFX games keep forced blanking on while the GSU renders
+          * across multiple frames. Override so the PPU displays VRAM data. */
+         if (Settings.SuperFX && PPU.ForcedBlanking) {
+            PPU.ForcedBlanking = 0;
+            if (PPU.Brightness == 0) {
+               PPU.Brightness = 0xF;
+               S9xFixColourBrightness();
+            }
+         }
          RenderLine(CPU.V_Counter - FIRST_VISIBLE_LINE);
+      }
 #ifndef USE_BLARGG_APU
       if (APU.TimerEnabled [2])
       {

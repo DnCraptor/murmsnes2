@@ -6,6 +6,7 @@
 #include "cpuexec.h"
 #include "dma.h"
 #include "apu.h"
+#include <stdio.h>
 
 /*modified per anomie Mode 5 findings */
 static const int32_t HDMA_ModeByteCounts [8] =
@@ -32,6 +33,7 @@ void S9xDoDMA(uint8_t Channel)
    CPU.InDMA = true;
    d = &DMA[Channel];
    count = d->TransferBytes;
+
 
    /* Prepare for custom chip DMA */
    if (count == 0)

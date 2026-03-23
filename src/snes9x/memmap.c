@@ -24,6 +24,9 @@
 #include "apu.h"
 #include "dsp.h"
 #include "srtc.h"
+#include "fxemu.h"
+
+extern FxInit_s SuperFX;
 
 #ifdef __W32_HEAP
 #include <malloc.h>
@@ -160,7 +163,7 @@ bool S9xInitMemory(void)
    IPPU.DirectColors = IPPU.ScreenColors + 256;
 
    Memory.RAM   = (uint8_t*)malloc(RAM_SIZE);
-   Memory.SRAM  = (uint8_t*)malloc(SRAM_SIZE);
+   Memory.SRAM  = (uint8_t*)malloc(Settings.ForceSuperFX ? 0x20000 : SRAM_SIZE);
    Memory.VRAM  = (uint8_t*)malloc(VRAM_SIZE);
    Memory.FillRAM = (uint8_t*)malloc(0x8000);
    bytes0x2000 = (uint8_t *)malloc(0x2000);
@@ -522,7 +525,13 @@ void InitROM(bool Interleaved)
       if ((Memory.ROMType & 0xf0) == 0xf0 && (strncmp(Memory.ROMName, "MEGAMAN X", 9) == 0 || strncmp(Memory.ROMName, "ROCKMAN X", 9) == 0))
          Settings.C4 = !Settings.ForceNoC4;
 
-      if ((Memory.ROMSpeed & ~0x10) == 0x25)
+      if (Settings.SuperFX)
+      {
+         SuperFXROMMap();
+         Settings.MultiPlayer5Master = false;
+         Settings.DSP1Master = false;
+      }
+      else if ((Memory.ROMSpeed & ~0x10) == 0x25)
          TalesROMMap(Interleaved);
       else if (Memory.ExtendedFormat)
          JumboLoROMMap(Interleaved);
@@ -554,11 +563,8 @@ void InitROM(bool Interleaved)
          LoROMMap();
    }
 
-   if (Memory.SRAMSize > 5)
-   {
-      printf("WARNING: SRAM was reduced to 64K by me. If you see this message, tell me about it.\n");
-      Memory.SRAMSize = 5;
-   }
+   if (Memory.SRAMSize > 7)
+      Memory.SRAMSize = 7; /* Cap to 128KB (SRAM_SIZE) */
 
    Memory.SRAMMask = Memory.SRAMSize ? ((1 << (Memory.SRAMSize + 3)) * 128) - 1 : 0;
 
@@ -772,6 +778,96 @@ void MapExtraRAM(void)
       Memory.MapInfo[c + 0x720].Type = MAP_TYPE_RAM;
       Memory.MapInfo[c + 0x730].Type = MAP_TYPE_RAM;
    }
+}
+
+static void DetectSuperFxRamSize(void)
+{
+   if (Memory.ROM[0x7FDA] == 0x33)
+      Memory.SRAMSize = Memory.ROM[0x7FBD];
+   else
+      Memory.SRAMSize = 5;
+}
+
+void SuperFXROMMap(void)
+{
+   int32_t c, i;
+
+   DetectSuperFxRamSize();
+
+   /* Set up SuperFX init struct */
+   SuperFX.pvRegisters = &Memory.FillRAM[0x3000];
+   SuperFX.nRamBanks = 2; /* 128KB: DOOM and other games need 2 banks */
+   SuperFX.pvRam = Memory.SRAM;
+   SuperFX.nRomBanks = (Memory.CalculatedSize + 0x7FFF) / 0x8000;
+   SuperFX.pvRom = (uint8_t*)Memory.ROM;
+
+   /* Banks 00->3f and 80->bf */
+   for (c = 0; c < 0x400; c += 16)
+   {
+      Memory.Map[c + 0] = Memory.Map[c + 0x800] = Memory.RAM;
+      Memory.Map[c + 1] = Memory.Map[c + 0x801] = Memory.RAM;
+      Memory.MapInfo[c + 0].Type = Memory.MapInfo[c + 0x800].Type = MAP_TYPE_RAM;
+      Memory.MapInfo[c + 1].Type = Memory.MapInfo[c + 0x801].Type = MAP_TYPE_RAM;
+
+      Memory.Map[c + 2] = Memory.Map[c + 0x802] = (uint8_t*)MAP_PPU;
+      Memory.Map[c + 3] = Memory.Map[c + 0x803] = (uint8_t*)MAP_PPU;
+      Memory.Map[c + 4] = Memory.Map[c + 0x804] = (uint8_t*)MAP_CPU;
+      Memory.Map[c + 5] = Memory.Map[c + 0x805] = (uint8_t*)MAP_CPU;
+      Memory.MapInfo[c + 2].Type = Memory.MapInfo[c + 0x802].Type = MAP_TYPE_I_O;
+      Memory.MapInfo[c + 3].Type = Memory.MapInfo[c + 0x803].Type = MAP_TYPE_I_O;
+      Memory.MapInfo[c + 4].Type = Memory.MapInfo[c + 0x804].Type = MAP_TYPE_I_O;
+      Memory.MapInfo[c + 5].Type = Memory.MapInfo[c + 0x805].Type = MAP_TYPE_I_O;
+
+      /* $6000-$7FFF: SuperFX backup RAM */
+      Memory.Map[c + 6] = Memory.Map[c + 0x806] = (uint8_t*)Memory.SRAM - 0x6000;
+      Memory.Map[c + 7] = Memory.Map[c + 0x807] = (uint8_t*)Memory.SRAM - 0x6000;
+      Memory.MapInfo[c + 6].Type = Memory.MapInfo[c + 0x806].Type = MAP_TYPE_RAM;
+      Memory.MapInfo[c + 7].Type = Memory.MapInfo[c + 0x807].Type = MAP_TYPE_RAM;
+
+      /* $8000-$FFFF: ROM */
+      for (i = c + 8; i < c + 16; i++)
+      {
+         Memory.Map[i] = Memory.Map[i + 0x800] = &Memory.ROM[(c << 11) % Memory.CalculatedSize] - 0x8000;
+         Memory.MapInfo[i].Type = Memory.MapInfo[i + 0x800].Type = MAP_TYPE_ROM;
+      }
+   }
+
+   /* Banks 40->7f and c0->ff: full 64KB ROM pages */
+   for (c = 0; c < 0x400; c += 16)
+   {
+      for (i = c; i < c + 16; i++)
+      {
+         Memory.Map[i + 0x400] = Memory.Map[i + 0xc00] = &Memory.ROM[(c << 12) % Memory.CalculatedSize];
+         Memory.MapInfo[i + 0x400].Type = Memory.MapInfo[i + 0xc00].Type = MAP_TYPE_ROM;
+      }
+   }
+
+   /* Banks 7e->7f: WRAM */
+   for (c = 0; c < 16; c++)
+   {
+      Memory.Map[c + 0x7e0] = Memory.RAM;
+      Memory.Map[c + 0x7f0] = Memory.RAM + 0x10000;
+      Memory.MapInfo[c + 0x7e0].Type = MAP_TYPE_RAM;
+      Memory.MapInfo[c + 0x7f0].Type = MAP_TYPE_RAM;
+   }
+
+   /* Banks 70->71: SuperFX SRAM */
+   for (c = 0; c < 32; c++)
+   {
+      Memory.Map[c + 0x700] = Memory.SRAM + (((c >> 4) & 1) << 16);
+      Memory.MapInfo[c + 0x700].Type = MAP_TYPE_RAM;
+   }
+
+   /* Replicate first 2MB of ROM at ROM + 0x200000, each 32K block doubled in each 64K page.
+    * This is how the GSU sees ROM via banks $00-$3F.
+    * main.c guarantees >=6MB buffer for SuperFX games. */
+   for (c = 0; c < 64; c++)
+   {
+      memcpy(&Memory.ROM[0x200000 + c * 0x10000], &Memory.ROM[c * 0x8000], 0x8000);
+      memcpy(&Memory.ROM[0x208000 + c * 0x10000], &Memory.ROM[c * 0x8000], 0x8000);
+   }
+
+   WriteProtectROM();
 }
 
 void LoROMMap(void)
