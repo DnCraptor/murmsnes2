@@ -680,9 +680,10 @@ static const char *bmap_value(int item) {
     return NULL;
 }
 
-/* NES pad physical button bits indexed by BTNMAP_* (for scan detection) */
+/* NES pad physical button bits indexed by BTNMAP_* (for scan detection)
+ * Physical SNES A = DPAD_Y, B = DPAD_A, X = DPAD_X, Y = DPAD_B */
 static const uint32_t scan_nes_bits[BTNMAP_COUNT] = {
-    DPAD_A, DPAD_B, DPAD_X, DPAD_Y,
+    DPAD_Y, DPAD_A, DPAD_X, DPAD_B,
     DPAD_LT, DPAD_RT, DPAD_START, DPAD_SELECT
 };
 

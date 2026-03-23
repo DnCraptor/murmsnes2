@@ -248,9 +248,11 @@ static const uint32_t snes_masks[BTNMAP_COUNT] = {
     SNES_TL_MASK, SNES_TR_MASK, SNES_START_MASK, SNES_SELECT_MASK
 };
 
-/* NES/SNES pad physical button bits indexed by BTNMAP_* */
+/* NES/SNES pad physical button bits indexed by BTNMAP_*
+ * Note: DPAD_A/DPAD_B are NES-era names that don't match SNES labels.
+ * Physical SNES A = DPAD_Y, B = DPAD_A, X = DPAD_X, Y = DPAD_B */
 static const uint32_t nespad_bits[BTNMAP_COUNT] = {
-    DPAD_A, DPAD_B, DPAD_X, DPAD_Y,
+    DPAD_Y, DPAD_A, DPAD_X, DPAD_B,
     DPAD_LT, DPAD_RT, DPAD_START, DPAD_SELECT
 };
 
