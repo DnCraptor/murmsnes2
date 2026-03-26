@@ -3,11 +3,11 @@
 #ifndef _TILE_H_
 #define _TILE_H_
 
-#ifdef MURMSNES_PROFILE
-#include "murmsnes_profile.h"
-#define MURMSNES_TILE_CONVERT_PROF() murmsnes_prof_inc_tile_convert()
+#ifdef FRANK_SNES_PROFILE
+#include "frank_snes_profile.h"
+#define FRANK_SNES_TILE_CONVERT_PROF() frank_snes_prof_inc_tile_convert()
 #else
-#define MURMSNES_TILE_CONVERT_PROF() do { } while (0)
+#define FRANK_SNES_TILE_CONVERT_PROF() do { } while (0)
 #endif
 
 /* Forward declare 8-pixel row functions for PICO builds */
@@ -45,7 +45,7 @@ extern uint8_t ConvertTile4bpp_asm(uint8_t* pCache, uint32_t TileAddr);
     pCache = &BG.Buffer[(TileNumber = (TileAddr >> BG.TileShift)) << 6]; \
     if ((BG.Buffered [TileNumber] & 0x1f) != (0x10|BG.Depth)) \
     { \
-      MURMSNES_TILE_CONVERT_PROF(); \
+      FRANK_SNES_TILE_CONVERT_PROF(); \
       BG.Buffered[TileNumber] = ConvertTile (pCache, TileAddr); \
     } \
     TileOpaque = (BG.Buffered[TileNumber] & 0x20) != 0; \

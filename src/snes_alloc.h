@@ -1,5 +1,5 @@
 /*
- * murmsnes - Memory allocation wrapper for SNES9x
+ * frank-snes - Memory allocation wrapper for SNES9x
  * Redirects large allocations to PSRAM
  */
 #ifndef SNES_ALLOC_H

@@ -23,9 +23,9 @@
 
 extern volatile bool g_palette_needs_update;
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
 #include "pico/stdlib.h"
-#include "murmsnes_profile.h"
+#include "frank_snes_profile.h"
 #elif defined(PICO_ON_DEVICE)
 #include "pico/stdlib.h"
 #endif
@@ -58,7 +58,7 @@ extern volatile uint32_t dsp_log_frame;
  *   - We track per-buffer (indexed by current_buffer)
  *   - Unchanged tiles retain their pixels from 2 frames ago
  */
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
 #define TILE_DIRTY_ENABLED 0
 #define BG1_INTERLACED 0
 
@@ -248,7 +248,7 @@ bool S9xInitGFX(void)
    if (!LocalState)
       return false;
 
-#if defined(MURMSNES_FAST_MODE) && BG_CACHE_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && BG_CACHE_ENABLED
    /* Use SubZBuffer as Z-cache - only safe when subscreen/transparency is disabled */
    if (!g_settings.transparency_enabled)
       bg_cache_zbuffer = GFX.SubZBuffer;
@@ -315,7 +315,7 @@ bool S9xInitGFX(void)
 void S9xDeinitGFX(void)
 {
    /* Free any memory allocated in S9xInitGFX */
-#if defined(MURMSNES_FAST_MODE) && BG_CACHE_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && BG_CACHE_ENABLED
    /* bg_cache_zbuffer points to SubZBuffer (not allocated), just NULL it */
    bg_cache_zbuffer = NULL;
 #endif
@@ -333,7 +333,7 @@ void S9xDeinitGFX(void)
 
 void S9xStartScreenRefresh(void)
 {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
    /* Report and reset S9xUpdateScreen call counter */
    if (g_upd_screen_calls > upd_screen_max_calls) {
       upd_screen_max_calls = g_upd_screen_calls;
@@ -385,7 +385,7 @@ void S9xStartScreenRefresh(void)
       GFX.DepthDelta = GFX.SubZBuffer - GFX.ZBuffer;
       GFX.Delta = GFX.SubScreen - GFX.Screen;  // 8-bit: no shift
       
-#if defined(MURMSNES_FAST_MODE) && TILE_DIRTY_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && TILE_DIRTY_ENABLED
       /* Invalidate tile dirty tracking on palette changes */
       if (IPPU.ColorsChanged) {
          tile_dirty_valid[0] = 0;
@@ -465,7 +465,7 @@ void S9xEndScreenRefresh(void)
          }
       }
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
       /* Increment BG frameskip counter after each rendered frame */
       bg_frame_counter++;
       
@@ -868,7 +868,7 @@ static void DrawOBJS(bool OnMain, uint8_t D)
 
    GFX.Z1 = D + 2;
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
    /* FAST MODE: Adaptive sprite reduction.
     * Normal: 16 sprites/scanline on every line (full quality).
     * Heavy (prev frame obj > 2ms): interlace + 8 sprites/line.
@@ -888,7 +888,7 @@ static void DrawOBJS(bool OnMain, uint8_t D)
 
    for (Y = GFX.StartY, Offset = Y * GFX.PPL; Y <= GFX.EndY; Y++, Offset += GFX.PPL)
    {
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
       if (_do_interlace && (Y & 1) == _obj_phase)
          continue;
 #endif
@@ -928,7 +928,7 @@ static void DrawOBJS(bool OnMain, uint8_t D)
          if (X == -256)
             X = 256;
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
          /* FAST_MODE: Simplified sprite loop - skip window clipping when not needed */
          if (!clipcount) {
             /* No window clipping - fast path: just draw all visible tiles */
@@ -991,7 +991,7 @@ static void DrawOBJS(bool OnMain, uint8_t D)
       }
    }
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
    /* Update adaptive interlacing state for next frame based on current cost */
    _obj_interlace_active = (g_render_obj_us >= OBJ_INTERLACE_THRESH_US);
 #endif
@@ -1855,7 +1855,7 @@ static void DrawBackground(uint32_t BGMode, uint32_t bg, uint8_t Z1, uint8_t Z2)
       if (Y + Lines > GFX.EndY)
          Lines = GFX.EndY + 1 - Y;
 
-#if defined(MURMSNES_FAST_MODE) && BG1_INTERLACED
+#if defined(FRANK_SNES_FAST_MODE) && BG1_INTERLACED
       /* Interlaced BG1: Skip odd scanlines, copy even to odd after loop */
       /* This variable tracks if we should copy at end of this iteration */
       int32_t do_interlace_copy = 0;
@@ -1989,7 +1989,7 @@ static void DrawBackground(uint32_t BGMode, uint32_t bg, uint8_t Z1, uint8_t Z2)
          Middle = Count >> 3;
          Count &= 7;
 
-#if defined(MURMSNES_FAST_MODE) && TILE_DIRTY_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && TILE_DIRTY_ENABLED
          /* FAST_MODE with Tile Dirty Tracking: Skip unchanged tiles */
          if (BG.TileSize == 8 && bg < 2 && tile_dirty_valid[current_buffer])
          {
@@ -2052,7 +2052,7 @@ static void DrawBackground(uint32_t BGMode, uint32_t bg, uint8_t Z1, uint8_t Z2)
             }
          }
          else
-#elif defined(MURMSNES_FAST_MODE)
+#elif defined(FRANK_SNES_FAST_MODE)
          /* FAST_MODE without dirty tracking: Optimized loop for 8x8 tiles */
          if (BG.TileSize == 8)
          {
@@ -2134,7 +2134,7 @@ static void DrawBackground(uint32_t BGMode, uint32_t bg, uint8_t Z1, uint8_t Z2)
          }
       }
       
-#if defined(MURMSNES_FAST_MODE) && BG1_INTERLACED
+#if defined(FRANK_SNES_FAST_MODE) && BG1_INTERLACED
       /* After rendering even line(s), copy each to the odd line below */
       if (do_interlace_copy) {
          for (int32_t line = Y; line < Y + Lines && line + 1 <= (int32_t)GFX.EndY; line++) {
@@ -2751,7 +2751,7 @@ static void DrawBGMode7Background16Sub1_2_i(uint8_t* Screen, int32_t bg)
 
 static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D)
 {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
    uint32_t __rs_t0 = time_us_32();
 #endif
    bool BG0;
@@ -2762,12 +2762,12 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
 
    GFX.S = Screen;
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
    /* FAST MODE: Skip subscreen rendering when transparency is off */
    if (sub && !g_settings.transparency_enabled)
    {
-#ifdef MURMSNES_PROFILE
-      murmsnes_prof_add_render_screen_us((uint32_t)(time_us_32() - __rs_t0));
+#ifdef FRANK_SNES_PROFILE
+      frank_snes_prof_add_render_screen_us((uint32_t)(time_us_32() - __rs_t0));
 #endif
       return;
    }
@@ -2792,7 +2792,7 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
       OB  = ON_SUB(4);
    }
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
    /* Runtime layer enable/disable from settings menu */
    {
       extern settings_t g_settings;
@@ -2830,55 +2830,55 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
          if (OB)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(4));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t _obj_t0 = time_us_32();
 #endif
             DrawOBJS(!sub, D);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             g_render_obj_us += (time_us_32() - _obj_t0);
 #endif
          }
          if (BG0)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(0));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t _bg0_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 0, D + 10, D + 14);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             g_render_bg_us[0] += (time_us_32() - _bg0_t0);
 #endif
          }
          if (BG1)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(1));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t _bg1_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 1, D + 9, D + 13);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             g_render_bg_us[1] += (time_us_32() - _bg1_t0);
 #endif
          }
          if (BG2)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(2));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t _bg2_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 2, D + 3, PPU.BG3Priority ? D + 17 : D + 6);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             g_render_bg_us[2] += (time_us_32() - _bg2_t0);
 #endif
          }
          if (BG3 && PPU.BGMode == 0)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(3));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t _bg3_t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 3, D + 2, D + 5);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             g_render_bg_us[3] += (time_us_32() - _bg3_t0);
 #endif
          }
@@ -2891,34 +2891,34 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
          if (OB)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(4));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t __t0 = time_us_32();
 #endif
             DrawOBJS(!sub, D);
-#ifdef MURMSNES_PROFILE
-            murmsnes_prof_add_rs_obj_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+            frank_snes_prof_add_rs_obj_us((uint32_t)(time_us_32() - __t0));
 #endif
          }
          if (BG0)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(0));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t __t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 0, D + 5, D + 13);
-#ifdef MURMSNES_PROFILE
-            murmsnes_prof_add_rs_bg0_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+            frank_snes_prof_add_rs_bg0_us((uint32_t)(time_us_32() - __t0));
 #endif
          }
          if (BG1 && PPU.BGMode != 6)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(1));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t __t0 = time_us_32();
 #endif
             DrawBackground(PPU.BGMode, 1, D + 2, D + 9);
-#ifdef MURMSNES_PROFILE
-            murmsnes_prof_add_rs_bg1_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+            frank_snes_prof_add_rs_bg1_us((uint32_t)(time_us_32() - __t0));
 #endif
          }
          break;
@@ -2926,12 +2926,12 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
          if (OB)
          {
             SelectTileRenderer(sub || !SUB_OR_ADD(4));
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t __t0 = time_us_32();
 #endif
             DrawOBJS(!sub, D);
-#ifdef MURMSNES_PROFILE
-            murmsnes_prof_add_rs_obj_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+            frank_snes_prof_add_rs_obj_us((uint32_t)(time_us_32() - __t0));
 #endif
          }
          if (BG0 || ((Memory.FillRAM [0x2133] & 0x40) && BG1))
@@ -2956,12 +2956,12 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
             }
             if (sub || !SUB_OR_ADD(0))
             {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                uint32_t __t0 = time_us_32();
 #endif
                DrawBGMode7Background16(Screen, bg);
-#ifdef MURMSNES_PROFILE
-               murmsnes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+               frank_snes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
 #endif
             }
             else
@@ -2970,22 +2970,22 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
                {
                   if (GFX.r2131 & 0x40)
                   {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                      uint32_t __t0 = time_us_32();
 #endif
                      DrawBGMode7Background16Sub1_2(Screen, bg);
-#ifdef MURMSNES_PROFILE
-                     murmsnes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+                     frank_snes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
 #endif
                   }
                   else
                   {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                      uint32_t __t0 = time_us_32();
 #endif
                      DrawBGMode7Background16Sub(Screen, bg);
-#ifdef MURMSNES_PROFILE
-                     murmsnes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+                     frank_snes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
 #endif
                   }
                }
@@ -2993,22 +2993,22 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
                {
                   if (GFX.r2131 & 0x40)
                   {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                      uint32_t __t0 = time_us_32();
 #endif
                      DrawBGMode7Background16Add1_2(Screen, bg);
-#ifdef MURMSNES_PROFILE
-                     murmsnes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+                     frank_snes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
 #endif
                   }
                   else
                   {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                      uint32_t __t0 = time_us_32();
 #endif
                      DrawBGMode7Background16Add(Screen, bg);
-#ifdef MURMSNES_PROFILE
-                     murmsnes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
+#ifdef FRANK_SNES_PROFILE
+                     frank_snes_prof_add_rs_mode7_us((uint32_t)(time_us_32() - __t0));
 #endif
                   }
                }
@@ -3019,15 +3019,15 @@ static void RenderScreen(uint8_t* Screen, bool sub, bool force_no_add, uint8_t D
          break;
    }
 
-#ifdef MURMSNES_PROFILE
-   murmsnes_prof_add_render_screen_us((uint32_t)(time_us_32() - __rs_t0));
+#ifdef FRANK_SNES_PROFILE
+   frank_snes_prof_add_render_screen_us((uint32_t)(time_us_32() - __rs_t0));
 #endif
 }
 
 void S9xUpdateScreen(void)
 {
    g_upd_screen_calls++;
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
    uint32_t _render_t0 = time_us_32();
    uint32_t __us_t0 = _render_t0;
 #endif
@@ -3041,7 +3041,7 @@ void S9xUpdateScreen(void)
    GFX.r2130 = Memory.FillRAM [0x2130];
    GFX.Pseudo = Memory.FillRAM [0x2133] & 8;
 
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
    if (!g_settings.transparency_enabled) {
       /* FAST MODE: Disable subscreen and color math entirely for maximum speed */
       GFX.r212d = 0;  /* No subscreen layers */
@@ -3124,7 +3124,7 @@ void S9xUpdateScreen(void)
       if (pClip->Count [5])
       {
          /* Colour window enabled. */
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __zclear_t0 = time_us_32();
 #endif
          uint32_t y;
@@ -3166,13 +3166,13 @@ void S9xUpdateScreen(void)
                }
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
 #endif
       }
       else
       {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __zclear_t0 = time_us_32();
 #endif
          uint32_t y;
@@ -3195,26 +3195,26 @@ void S9xUpdateScreen(void)
                   *p++ = b;
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
 #endif
       }
 
       if (ANYTHING_ON_SUB)
       {
          GFX.DB = GFX.SubZBuffer;
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __sub_t0 = time_us_32();
 #endif
          RenderScreen(GFX.SubScreen, true, true, SUB_SCREEN_DEPTH);
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_render_sub_us((uint32_t)(time_us_32() - __sub_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_render_sub_us((uint32_t)(time_us_32() - __sub_t0));
 #endif
       }
 
       if (IPPU.Clip [0].Count [5])
       {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __cm_t0 = time_us_32();
 #endif
          uint32_t y;
@@ -3234,23 +3234,23 @@ void S9xUpdateScreen(void)
                p++;
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
 #endif
       }
 
       GFX.DB = GFX.ZBuffer;
-   #ifdef MURMSNES_PROFILE
+   #ifdef FRANK_SNES_PROFILE
       uint32_t __main_t0 = time_us_32();
    #endif
       RenderScreen(GFX.Screen, false, false, MAIN_SCREEN_DEPTH);
-   #ifdef MURMSNES_PROFILE
-      murmsnes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
+   #ifdef FRANK_SNES_PROFILE
+      frank_snes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
    #endif
 
       if (SUB_OR_ADD(5))
       {
-   #ifdef MURMSNES_PROFILE
+   #ifdef FRANK_SNES_PROFILE
          uint32_t __cm_t0 = time_us_32();
    #endif
          uint32_t y;
@@ -3329,13 +3329,13 @@ void S9xUpdateScreen(void)
                }
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
 #endif
       } /* --if (SUB_OR_ADD(5)) */
       else
       {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __cm_t0 = time_us_32();
 #endif
          uint32_t y;
@@ -3384,8 +3384,8 @@ void S9xUpdateScreen(void)
                }
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_colormath_us((uint32_t)(time_us_32() - __cm_t0));
 #endif
       }
    } /* force blanking */
@@ -3399,7 +3399,7 @@ void S9xUpdateScreen(void)
       if (PPU.ForcedBlanking)
          back = black;
 
-#if defined(MURMSNES_FAST_MODE) && BG_CACHE_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && BG_CACHE_ENABLED
       /* BG Cache: Skip backdrop fill on skip frames (BG pixels persist from 2 frames ago) */
       bool skip_backdrop = bg_cache_zbuffer && (PPU.BGMode == 1) && (bg_frame_counter & 2);
 #else
@@ -3408,7 +3408,7 @@ void S9xUpdateScreen(void)
 
       if (IPPU.Clip [0].Count[5] && !skip_backdrop)
       {
-   #ifdef MURMSNES_PROFILE
+   #ifdef FRANK_SNES_PROFILE
          uint32_t __bd_t0 = time_us_32();
    #endif
          uint32_t y;
@@ -3434,13 +3434,13 @@ void S9xUpdateScreen(void)
                }
             }
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_backdrop_us((uint32_t)(time_us_32() - __bd_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_backdrop_us((uint32_t)(time_us_32() - __bd_t0));
 #endif
       }
       else if (!skip_backdrop)
       {
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __bd_t0 = time_us_32();
 #endif
          uint32_t y;
@@ -3451,8 +3451,8 @@ void S9xUpdateScreen(void)
             while (p < q)
                *p++ = back;
          }
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_backdrop_us((uint32_t)(time_us_32() - __bd_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_backdrop_us((uint32_t)(time_us_32() - __bd_t0));
 #endif
       }
 
@@ -3460,18 +3460,18 @@ void S9xUpdateScreen(void)
       {
          uint32_t y;
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __zclear_t0 = time_us_32();
 #endif
          for (y = starty; y <= endy; y++)
             memset(GFX.ZBuffer + y * GFX.ZPitch, 0, IPPU.RenderedScreenWidth);
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_zclear_us((uint32_t)(time_us_32() - __zclear_t0));
 #endif
 
          GFX.DB = GFX.ZBuffer;
 
-#if defined(MURMSNES_FAST_MODE) && BG_CACHE_ENABLED
+#if defined(FRANK_SNES_FAST_MODE) && BG_CACHE_ENABLED
          /* BG Caching using SRAM (SubZBuffer as Z-cache)
           * 
           * 4-frame cycle with double-buffered screens:
@@ -3487,12 +3487,12 @@ void S9xUpdateScreen(void)
             
             if (!is_skip_frame) {
                /* Full render frame: BGs + sprites, then cache Z */
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                uint32_t __main_t0 = time_us_32();
 #endif
                RenderScreen(GFX.Screen, false, true, SUB_SCREEN_DEPTH);
-#ifdef MURMSNES_PROFILE
-               murmsnes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
+#ifdef FRANK_SNES_PROFILE
+               frank_snes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
 #endif
                
                /* Cache Z-buffer to SubZBuffer (SRAM, fast) */
@@ -3514,32 +3514,32 @@ void S9xUpdateScreen(void)
                /* Render sprites only (BGs skipped - old pixels stay) */
                bg_cache_skip_bgs = true;
                
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
                uint32_t __main_t0 = time_us_32();
 #endif
                RenderScreen(GFX.Screen, false, true, SUB_SCREEN_DEPTH);
-#ifdef MURMSNES_PROFILE
-               murmsnes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
+#ifdef FRANK_SNES_PROFILE
+               frank_snes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
 #endif
                bg_cache_skip_bgs = false;
             }
          } else {
             /* Non-Mode1 or no cache: normal render */
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
             uint32_t __main_t0 = time_us_32();
 #endif
             RenderScreen(GFX.Screen, false, true, SUB_SCREEN_DEPTH);
-#ifdef MURMSNES_PROFILE
-            murmsnes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
+#ifdef FRANK_SNES_PROFILE
+            frank_snes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
 #endif
          }
 #else
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
          uint32_t __main_t0 = time_us_32();
 #endif
          RenderScreen(GFX.Screen, false, true, SUB_SCREEN_DEPTH);
-#ifdef MURMSNES_PROFILE
-         murmsnes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
+#ifdef FRANK_SNES_PROFILE
+         frank_snes_prof_add_upd_render_main_us((uint32_t)(time_us_32() - __main_t0));
 #endif
 #endif /* BG_CACHE_ENABLED */
       }
@@ -3551,7 +3551,7 @@ void S9xUpdateScreen(void)
       /* Mixture of background modes used on screen - scale width
        * of all non-mode 5 and 6 pixels.
        * Guard: only if buffer pitch is wide enough (512+). */
-   #ifdef MURMSNES_PROFILE
+   #ifdef FRANK_SNES_PROFILE
       uint32_t __scale_t0 = time_us_32();
    #endif
       uint32_t y;
@@ -3563,24 +3563,24 @@ void S9xUpdateScreen(void)
          for (x = 255; x >= 0; x--, p--, q -= 2)
             q[0] = q[1] = p[0];
       }
-#ifdef MURMSNES_PROFILE
-      murmsnes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
+#ifdef FRANK_SNES_PROFILE
+      frank_snes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
 #endif
    }
 
    /* Double the height of the pixels just drawn */
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
    uint32_t __scale_t0 = time_us_32();
 #endif
    FIX_INTERLACE(GFX.Screen, false, GFX.ZBuffer);
-#ifdef MURMSNES_PROFILE
-   murmsnes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
+#ifdef FRANK_SNES_PROFILE
+   frank_snes_prof_add_upd_scale_us((uint32_t)(time_us_32() - __scale_t0));
 #endif
 
    IPPU.PreviousLine = IPPU.CurrentLine;
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
    g_render_us += (time_us_32() - _render_t0);
-   murmsnes_prof_add_update_screen_us((uint32_t)(time_us_32() - __us_t0));
+   frank_snes_prof_add_update_screen_us((uint32_t)(time_us_32() - __us_t0));
 #endif
 }

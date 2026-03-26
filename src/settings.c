@@ -923,7 +923,7 @@ bool settings_save(void) {
         if (res != FR_OK) return false;
     }
 
-    f_printf(&file, "; murmsnes settings\n");
+    f_printf(&file, "; frank-snes settings\n");
     f_printf(&file, "p1_mode=%d\n", g_settings.p1_mode);
     f_printf(&file, "p2_mode=%d\n", g_settings.p2_mode);
     f_printf(&file, "volume=%d\n", g_settings.volume);

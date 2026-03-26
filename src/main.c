@@ -56,8 +56,8 @@
 #include "settings.h"
 #include "menu_ui.h"
 
-#ifdef MURMSNES_PROFILE
-#include "murmsnes_profile.h"
+#ifdef FRANK_SNES_PROFILE
+#include "frank_snes_profile.h"
 #endif
 
 //=============================================================================
@@ -152,7 +152,7 @@ static void __no_inline_not_in_flash_func(set_flash_timings)(int cpu_mhz, int fl
 //=============================================================================
 #define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
 typedef struct {
     uint32_t last_report_us;
     uint32_t frames;
@@ -202,7 +202,7 @@ static inline void perf_reset_window(uint32_t now_us) {
     g_perf.min_q_fill = 0xFFFFFFFFu;
     g_perf.max_q_fill = 0;
 
-    murmsnes_prof_reset_window();
+    frank_snes_prof_reset_window();
 }
 
 static inline void perf_max_u32(uint32_t *dst, uint32_t v) {
@@ -729,7 +729,7 @@ extern void S9xFixColourBrightness(void);
 //   3 = render 2/6 frames (~20 fps) - DEFAULT
 //   4 = render 2/6 frames (~20 fps)
 #ifndef FRAMESKIP_LEVEL
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
 #define FRAMESKIP_LEVEL 2  // Fast mode: 40fps with reduced quality
 #else
 #define FRAMESKIP_LEVEL 3  // Normal mode: 30fps with full quality
@@ -771,10 +771,10 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         (unsigned)TARGET_FRAME_US,
         (unsigned)FRAMESKIP_LEVEL,
         (unsigned)LATE_RESYNC_US);
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
     LOG("[perf] enabled\n");
 #else
-    LOG("[perf] disabled (rebuild with MURMSNES_PROFILE=ON)\n");
+    LOG("[perf] disabled (rebuild with FRANK_SNES_PROFILE=ON)\n");
 #endif
 
     // Fixed-timestep scheduling: keep emulation/audio running at ~60Hz.
@@ -798,7 +798,7 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         g_settings.frameskip, frameskip_level_names[g_settings.frameskip],
         (unsigned)frameskip_pattern_len, (unsigned)frameskip_pattern_mask);
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
     perf_reset_window(time_us_32());
 #endif
 
@@ -949,12 +949,12 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
 
         // Run one SNES frame of emulation.
         uint32_t _diag_t0 = time_us_32();
-    #ifdef MURMSNES_PROFILE
+    #ifdef FRANK_SNES_PROFILE
         uint32_t t0 = _diag_t0;
     #endif
         S9xMainLoop();
         uint32_t _diag_t1 = time_us_32();
-    #ifdef MURMSNES_PROFILE
+    #ifdef FRANK_SNES_PROFILE
         uint32_t t1 = _diag_t1;
     #endif
         /* Feed dynamic frameskip: if this frame exceeded the budget, accumulate overrun */
@@ -975,16 +975,16 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         // Mix audio on Core 0 (always, even when skipping render), then apply
         // gain/limiting and pack to 32-bit stereo frames.
         static int16_t __attribute__((aligned(32))) mix16[AUDIO_BUFFER_LENGTH * 2];
-    #ifdef MURMSNES_PROFILE
+    #ifdef FRANK_SNES_PROFILE
         uint32_t t2 = time_us_32();
     #endif
-    #ifdef MURMSNES_FAST_MODE
+    #ifdef FRANK_SNES_FAST_MODE
         // FAST MODE: Mix mono only (half the samples), then duplicate to stereo in packing
         S9xMixSamplesMono((void *)mix16, AUDIO_BUFFER_LENGTH);
     #else
         S9xMixSamples((void *)mix16, AUDIO_BUFFER_LENGTH * 2);
     #endif
-    #ifdef MURMSNES_PROFILE
+    #ifdef FRANK_SNES_PROFILE
         uint32_t t3 = time_us_32();
     #endif
 
@@ -999,17 +999,17 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         const int gain_num = g_settings.volume * 4;
         const int gain_den = 100;
         const bool use_soft_limiter = true;
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
         uint32_t t4 = time_us_32();
 #endif
         // Use optimized audio packing
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
         // FAST MODE: Pack mono to stereo (duplicate each sample)
         audio_pack_mono_to_stereo(dst32, mix16, AUDIO_BUFFER_LENGTH, gain_num, gain_den, use_soft_limiter);
 #else
         audio_pack_opt(dst32, mix16, AUDIO_BUFFER_LENGTH, gain_num, gain_den, use_soft_limiter);
 #endif
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
         uint32_t t5 = time_us_32();
 #endif
 
@@ -1046,13 +1046,13 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
                 uint32_t p2 = audio_prod_seq;
                 if ((p2 - audio_cons_seq) >= AUDIO_QUEUE_DEPTH)
                     break;
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
                 S9xMixSamplesMono((void *)mix16, AUDIO_BUFFER_LENGTH);
 #else
                 S9xMixSamples((void *)mix16, AUDIO_BUFFER_LENGTH * 2);
 #endif
                 uint32_t *edst = audio_packed_buffer[p2 % AUDIO_QUEUE_DEPTH];
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
                 audio_pack_mono_to_stereo(edst, mix16, AUDIO_BUFFER_LENGTH, gain_num, gain_den, use_soft_limiter);
 #else
                 audio_pack_opt(edst, mix16, AUDIO_BUFFER_LENGTH, gain_num, gain_den, use_soft_limiter);
@@ -1087,7 +1087,7 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
         next_frame_deadline += TARGET_FRAME_US;
         frame_num++;
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
         // Update stats (keep overhead tiny; print at most once/sec)
         uint32_t now_us = time_us_32();
         uint32_t emul_us = (uint32_t)(t1 - t0);
@@ -1126,91 +1126,91 @@ static bool __time_critical_func(emulation_loop)(void) {  /* returns true if use
             uint64_t upd_sum = 0;
             uint32_t upd_max = 0;
             uint32_t upd_cnt = 0;
-            murmsnes_prof_take_update_screen(&upd_sum, &upd_max, &upd_cnt);
+            frank_snes_prof_take_update_screen(&upd_sum, &upd_max, &upd_cnt);
             uint32_t upd_avg = (upd_cnt ? (uint32_t)(upd_sum / upd_cnt) : 0);
 
             uint64_t uz_sum = 0;
             uint32_t uz_max = 0;
             uint32_t uz_cnt = 0;
-            murmsnes_prof_take_upd_zclear(&uz_sum, &uz_max, &uz_cnt);
+            frank_snes_prof_take_upd_zclear(&uz_sum, &uz_max, &uz_cnt);
             uint32_t uz_avg = (uz_cnt ? (uint32_t)(uz_sum / uz_cnt) : 0);
 
             uint64_t usub_sum = 0;
             uint32_t usub_max = 0;
             uint32_t usub_cnt = 0;
-            murmsnes_prof_take_upd_render_sub(&usub_sum, &usub_max, &usub_cnt);
+            frank_snes_prof_take_upd_render_sub(&usub_sum, &usub_max, &usub_cnt);
             uint32_t usub_avg = (usub_cnt ? (uint32_t)(usub_sum / usub_cnt) : 0);
 
             uint64_t umain_sum = 0;
             uint32_t umain_max = 0;
             uint32_t umain_cnt = 0;
-            murmsnes_prof_take_upd_render_main(&umain_sum, &umain_max, &umain_cnt);
+            frank_snes_prof_take_upd_render_main(&umain_sum, &umain_max, &umain_cnt);
             uint32_t umain_avg = (umain_cnt ? (uint32_t)(umain_sum / umain_cnt) : 0);
 
             uint64_t ucm_sum = 0;
             uint32_t ucm_max = 0;
             uint32_t ucm_cnt = 0;
-            murmsnes_prof_take_upd_colormath(&ucm_sum, &ucm_max, &ucm_cnt);
+            frank_snes_prof_take_upd_colormath(&ucm_sum, &ucm_max, &ucm_cnt);
             uint32_t ucm_avg = (ucm_cnt ? (uint32_t)(ucm_sum / ucm_cnt) : 0);
 
             uint64_t ubd_sum = 0;
             uint32_t ubd_max = 0;
             uint32_t ubd_cnt = 0;
-            murmsnes_prof_take_upd_backdrop(&ubd_sum, &ubd_max, &ubd_cnt);
+            frank_snes_prof_take_upd_backdrop(&ubd_sum, &ubd_max, &ubd_cnt);
             uint32_t ubd_avg = (ubd_cnt ? (uint32_t)(ubd_sum / ubd_cnt) : 0);
 
             uint64_t usc_sum = 0;
             uint32_t usc_max = 0;
             uint32_t usc_cnt = 0;
-            murmsnes_prof_take_upd_scale(&usc_sum, &usc_max, &usc_cnt);
+            frank_snes_prof_take_upd_scale(&usc_sum, &usc_max, &usc_cnt);
             uint32_t usc_avg = (usc_cnt ? (uint32_t)(usc_sum / usc_cnt) : 0);
 
             uint64_t rs_sum = 0;
             uint32_t rs_max = 0;
             uint32_t rs_cnt = 0;
-            murmsnes_prof_take_render_screen(&rs_sum, &rs_max, &rs_cnt);
+            frank_snes_prof_take_render_screen(&rs_sum, &rs_max, &rs_cnt);
             uint32_t rs_avg = (rs_cnt ? (uint32_t)(rs_sum / rs_cnt) : 0);
 
             uint64_t ro_sum = 0;
             uint32_t ro_max = 0;
             uint32_t ro_cnt = 0;
-            murmsnes_prof_take_rs_obj(&ro_sum, &ro_max, &ro_cnt);
+            frank_snes_prof_take_rs_obj(&ro_sum, &ro_max, &ro_cnt);
             uint32_t ro_avg = (ro_cnt ? (uint32_t)(ro_sum / ro_cnt) : 0);
 
             uint64_t r0_sum = 0;
             uint32_t r0_max = 0;
             uint32_t r0_cnt = 0;
-            murmsnes_prof_take_rs_bg0(&r0_sum, &r0_max, &r0_cnt);
+            frank_snes_prof_take_rs_bg0(&r0_sum, &r0_max, &r0_cnt);
             uint32_t r0_avg = (r0_cnt ? (uint32_t)(r0_sum / r0_cnt) : 0);
 
             uint64_t r1_sum = 0;
             uint32_t r1_max = 0;
             uint32_t r1_cnt = 0;
-            murmsnes_prof_take_rs_bg1(&r1_sum, &r1_max, &r1_cnt);
+            frank_snes_prof_take_rs_bg1(&r1_sum, &r1_max, &r1_cnt);
             uint32_t r1_avg = (r1_cnt ? (uint32_t)(r1_sum / r1_cnt) : 0);
 
             uint64_t r2_sum = 0;
             uint32_t r2_max = 0;
             uint32_t r2_cnt = 0;
-            murmsnes_prof_take_rs_bg2(&r2_sum, &r2_max, &r2_cnt);
+            frank_snes_prof_take_rs_bg2(&r2_sum, &r2_max, &r2_cnt);
             uint32_t r2_avg = (r2_cnt ? (uint32_t)(r2_sum / r2_cnt) : 0);
 
             uint64_t r3_sum = 0;
             uint32_t r3_max = 0;
             uint32_t r3_cnt = 0;
-            murmsnes_prof_take_rs_bg3(&r3_sum, &r3_max, &r3_cnt);
+            frank_snes_prof_take_rs_bg3(&r3_sum, &r3_max, &r3_cnt);
             uint32_t r3_avg = (r3_cnt ? (uint32_t)(r3_sum / r3_cnt) : 0);
 
             uint64_t r7_sum = 0;
             uint32_t r7_max = 0;
             uint32_t r7_cnt = 0;
-            murmsnes_prof_take_rs_mode7(&r7_sum, &r7_max, &r7_cnt);
+            frank_snes_prof_take_rs_mode7(&r7_sum, &r7_max, &r7_cnt);
             uint32_t r7_avg = (r7_cnt ? (uint32_t)(r7_sum / r7_cnt) : 0);
 
             uint64_t tc_sum = 0;
             uint32_t tc_max = 0;
             uint32_t tc_cnt = 0;
-            murmsnes_prof_take_tile_convert(&tc_sum, &tc_max, &tc_cnt);
+            frank_snes_prof_take_tile_convert(&tc_sum, &tc_max, &tc_cnt);
 
             // Snapshot a few PPU regs for correlation (cheap: 1 load each)
             uint8_t ppu_bgm = (uint8_t)PPU.BGMode;
@@ -1326,7 +1326,7 @@ int main(void) {
     
     LOG("\n\n");
     LOG("========================================\n");
-    LOG("   murmsnes - SNES for RP2350\n");
+    LOG("   frank-snes - SNES for RP2350\n");
     LOG("========================================\n");
     LOG("System Clock: %lu MHz\n", clock_get_hz(clk_sys) / 1000000);
     

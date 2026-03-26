@@ -1,13 +1,13 @@
 /*
- * MURMSNES Performance Optimization Strategies
+ * FRANK_SNES Performance Optimization Strategies
  * Practical C-level and assembly-level optimizations
  * 
  * This file documents and provides code for key optimizations
  * to address the ~35-40ms per-frame bottleneck (need <16.67ms for 60fps)
  */
 
-#ifndef MURMSNES_OPTIMIZATIONS_H
-#define MURMSNES_OPTIMIZATIONS_H
+#ifndef FRANK_SNES_OPTIMIZATIONS_H
+#define FRANK_SNES_OPTIMIZATIONS_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -238,9 +238,9 @@ target_link_options(snes9x PRIVATE -flto)
    Add these measurement points to validate improvements
    ======================================================================== */
 
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
 
-#include "murmsnes_profile.h"
+#include "frank_snes_profile.h"
 
 // Template for new hot-spot measurement:
 static inline void measure_function(const char* name,
@@ -251,7 +251,7 @@ static inline void measure_function(const char* name,
     uint32_t delta = time_us_32() - start;
     
     // Log or accumulate
-    murmsnes_prof_add_custom_us(delta);  // Would need to add
+    frank_snes_prof_add_custom_us(delta);  // Would need to add
     
     if (delta > 1000) {
         LOG("[PERF] %s took %lu us (SLOW!)", name, delta);
@@ -277,4 +277,4 @@ static inline void measure_function(const char* name,
 #define DISABLE_ASSERTIONS      1
 #define DISABLE_DEBUG_LOGGING   1
 
-#endif // MURMSNES_OPTIMIZATIONS_H
+#endif // FRANK_SNES_OPTIMIZATIONS_H

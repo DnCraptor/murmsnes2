@@ -1,8 +1,8 @@
 #!/bin/bash
-# Flash murmsnes to connected Pico device
+# Flash frank-snes to connected Pico device
 
 # Default to ELF file from build directory
-FIRMWARE="${1:-./build/murmsnes.elf}"
+FIRMWARE="${1:-./build/frank-snes.elf}"
 
 # Check if firmware file exists
 if [ ! -f "$FIRMWARE" ]; then
@@ -11,7 +11,7 @@ if [ ! -f "$FIRMWARE" ]; then
     if [ ! -f "$FIRMWARE" ]; then
         echo "Error: Firmware file not found"
         echo "Usage: $0 [firmware.elf|firmware.uf2]"
-        echo "Default: ./build/murmsnes.elf"
+        echo "Default: ./build/frank-snes.elf"
         exit 1
     fi
 fi

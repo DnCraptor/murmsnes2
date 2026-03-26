@@ -13,13 +13,13 @@ set(CPU_SPEED "504" CACHE STRING "CPU clock in MHz: 252, 378, 504")
 set(PSRAM_SPEED "133" CACHE STRING "PSRAM max frequency in MHz: 84, 100, 133")
 
 # Lightweight on-device profiling (prints once per second over UART)
-option(MURMSNES_PROFILE "Enable periodic performance profiling output" OFF)
+option(FRANK_SNES_PROFILE "Enable periodic performance profiling output" OFF)
 
 # DSP command logging (KON/KOFF/FLG/GAIN to serial)
-option(MURMSNES_DSP_LOG "Enable DSP command logging output" OFF)
+option(FRANK_SNES_DSP_LOG "Enable DSP command logging output" OFF)
 
 # Fast mode: aggressively reduce quality for higher framerate
-option(MURMSNES_FAST_MODE "Enable fast mode (reduced quality for higher FPS)" ON)
+option(FRANK_SNES_FAST_MODE "Enable fast mode (reduced quality for higher FPS)" ON)
 
 # USB HID gamepad/keyboard support (enabled by default)
 option(USB_HID_ENABLED "Enable USB HID host for gamepads and keyboards" ON)
@@ -37,16 +37,16 @@ message(STATUS "Board: ${BOARD_VARIANT}, CPU: ${CPU_SPEED} MHz, PSRAM: ${PSRAM_S
 
 include(pico_sdk_import.cmake)
 
-project(murmsnes C CXX ASM)
+project(frank-snes C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
 # Read version from version.txt (format: "MAJOR MINOR", e.g. "1 00" -> "1.00")
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" MURMSNES_VERSION_RAW)
-string(STRIP "${MURMSNES_VERSION_RAW}" MURMSNES_VERSION_RAW)
-string(REPLACE " " "." MURMSNES_VERSION_STR "${MURMSNES_VERSION_RAW}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" FRANK_SNES_VERSION_RAW)
+string(STRIP "${FRANK_SNES_VERSION_RAW}" FRANK_SNES_VERSION_RAW)
+string(REPLACE " " "." FRANK_SNES_VERSION_STR "${FRANK_SNES_VERSION_RAW}")
 
 add_subdirectory(src/fatfs)
 add_subdirectory(drivers/sdcard)
@@ -117,9 +117,9 @@ set(UI_SOURCES
     src/settings.c
 )
 
-add_executable(murmsnes
+add_executable(frank-snes
     src/main.c
-    src/murmsnes_profile.c
+    src/frank_snes_profile.c
     ${SNES9X_SOURCES}
     ${ASM_OPT_SOURCES}
     ${UI_SOURCES}
@@ -128,7 +128,7 @@ add_executable(murmsnes
 set_source_files_properties(${SNES9X_SOURCES} PROPERTIES COMPILE_FLAGS
     "-O3 -fno-strict-aliasing -funroll-loops -fomit-frame-pointer")
 
-target_include_directories(murmsnes PRIVATE
+target_include_directories(frank-snes PRIVATE
     src
     src/snes9x
     src/fatfs
@@ -138,34 +138,34 @@ target_include_directories(murmsnes PRIVATE
     drivers/ps2kbd
 )
 
-target_compile_definitions(murmsnes PRIVATE
+target_compile_definitions(frank-snes PRIVATE
     BOARD_${BOARD_VARIANT}
     CPU_CLOCK_MHZ=${CPU_SPEED}
     CPU_VOLTAGE=${CPU_VOLTAGE}
     PSRAM_MAX_FREQ_MHZ=${PSRAM_SPEED}
     PICO_ON_DEVICE=1
-    MURMSNES_VERSION="${MURMSNES_VERSION_STR}"
+    FRANK_SNES_VERSION="${FRANK_SNES_VERSION_STR}"
     NO_WINDOW_CLIPPING=1
     SIMPLE_COLOR_MATH=1
     NO_ZERO_LUT=1
 )
 
-if(MURMSNES_PROFILE)
-    target_compile_definitions(murmsnes PRIVATE MURMSNES_PROFILE=1)
+if(FRANK_SNES_PROFILE)
+    target_compile_definitions(frank-snes PRIVATE FRANK_SNES_PROFILE=1)
 endif()
 
-if(MURMSNES_DSP_LOG)
-    target_compile_definitions(murmsnes PRIVATE MURMSNES_DSP_LOG=1)
+if(FRANK_SNES_DSP_LOG)
+    target_compile_definitions(frank-snes PRIVATE FRANK_SNES_DSP_LOG=1)
 endif()
 
-if(MURMSNES_FAST_MODE)
-    target_compile_definitions(murmsnes PRIVATE MURMSNES_FAST_MODE=1)
+if(FRANK_SNES_FAST_MODE)
+    target_compile_definitions(frank-snes PRIVATE FRANK_SNES_FAST_MODE=1)
     message(STATUS "FAST MODE enabled")
 endif()
 
 # Peripheral pins per board variant
 if(BOARD_VARIANT STREQUAL "M1")
-    target_compile_definitions(murmsnes PRIVATE
+    target_compile_definitions(frank-snes PRIVATE
         SDCARD_PIN_SPI0_CS=5
         SDCARD_PIN_SPI0_SCK=2
         SDCARD_PIN_SPI0_MOSI=3
@@ -175,7 +175,7 @@ if(BOARD_VARIANT STREQUAL "M1")
         NESPAD_GPIO_DATA=16
     )
 elseif(BOARD_VARIANT STREQUAL "M2")
-    target_compile_definitions(murmsnes PRIVATE
+    target_compile_definitions(frank-snes PRIVATE
         SDCARD_PIN_SPI0_CS=5
         SDCARD_PIN_SPI0_SCK=6
         SDCARD_PIN_SPI0_MOSI=7
@@ -186,7 +186,7 @@ elseif(BOARD_VARIANT STREQUAL "M2")
     )
 endif()
 
-target_link_libraries(murmsnes
+target_link_libraries(frank-snes
     pico_stdlib
     pico_multicore
     hardware_spi
@@ -203,11 +203,11 @@ target_link_libraries(murmsnes
 )
 
 # Dev builds: USB CDC serial for printf. Release builds (USB_HID): no serial.
-pico_enable_stdio_uart(murmsnes 0)
+pico_enable_stdio_uart(frank-snes 0)
 if(USB_HID_ENABLED)
-    pico_enable_stdio_usb(murmsnes 0)
+    pico_enable_stdio_usb(frank-snes 0)
 else()
-    pico_enable_stdio_usb(murmsnes 1)
+    pico_enable_stdio_usb(frank-snes 1)
 endif()
 
-pico_add_extra_outputs(murmsnes)
+pico_add_extra_outputs(frank-snes)

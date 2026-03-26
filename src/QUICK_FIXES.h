@@ -1,5 +1,5 @@
 /*
- * MURMSNES - Quick Start Performance Optimization
+ * FRANK_SNES - Quick Start Performance Optimization
  * 
  * This file provides ready-to-use optimization patches
  * for immediate performance improvement without full assembly rewrites.
@@ -250,9 +250,9 @@ void tile_cache_invalidate(uint32_t vram_addr) {
    File: CMakeLists.txt
    ============================================================================ */
 
-// Add this block to CMakeLists.txt in the murmsnes target:
+// Add this block to CMakeLists.txt in the frank-snes target:
 /*
-target_compile_options(murmsnes PRIVATE
+target_compile_options(frank-snes PRIVATE
     -O3
     -march=armv8.1-m.main
     -mtune=cortex-m33
@@ -262,7 +262,7 @@ target_compile_options(murmsnes PRIVATE
 )
 
 # For snes9x library specifically:
-target_compile_options(murmsnes_snes9x PRIVATE
+target_compile_options(frank-snes_snes9x PRIVATE
     -O3
     -march=armv8.1-m.main
     -mtune=cortex-m33
@@ -304,16 +304,16 @@ target_compile_options(murmsnes_snes9x PRIVATE
    ============================================================================ */
 
 // CURRENT: Heavy profiling overhead
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
     #define PROF_START uint32_t _prof_start = time_us_32()
-    #define PROF_END(name) murmsnes_prof_add_##name##_us(time_us_32() - _prof_start)
+    #define PROF_END(name) frank_snes_prof_add_##name##_us(time_us_32() - _prof_start)
 #else
     #define PROF_START
     #define PROF_END(name)
 #endif
 
 // OPTIMIZED: Lightweight profiling (minimal overhead)
-#ifdef MURMSNES_PROFILE
+#ifdef FRANK_SNES_PROFILE
     #define PROF_START_FAST uint32_t _ps = timer_hw->timelr  // 4 cycles
     #define PROF_END_FAST(n) prof_add(n, timer_hw->timelr - _ps)
     

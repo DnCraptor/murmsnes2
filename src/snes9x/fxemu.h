@@ -1,4 +1,4 @@
-/* SuperFX (GSU) emulator for murmsnes
+/* SuperFX (GSU) emulator for frank-snes
  * Based on snes9x2005 reference, optimized for RP2350 */
 
 #ifndef _FXEMU_H_

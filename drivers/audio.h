@@ -1,5 +1,5 @@
 /*
- * murmsnes - Chained Double-Buffer I2S Audio Driver for RP2350
+ * frank-snes - Chained Double-Buffer I2S Audio Driver for RP2350
  * Based on murmgenesis audio driver (PIO + DMA ping-pong, no pico-extras)
  */
 #ifndef AUDIO_H

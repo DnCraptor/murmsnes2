@@ -28,8 +28,8 @@
 extern volatile uint32_t current_buffer;
 extern uint8_t SCREEN[2][256 * 224];
 
-#ifndef MURMSNES_VERSION
-#define MURMSNES_VERSION "?"
+#ifndef FRANK_SNES_VERSION
+#define FRANK_SNES_VERSION "?"
 #endif
 
 #define SCREEN_W 256
@@ -1222,9 +1222,9 @@ void welcome_screen_show(void) {
     draw_buf = 0;
     fb = SCREEN[draw_buf];
 
-#ifdef MURMSNES_VERSION
+#ifdef FRANK_SNES_VERSION
     char version_str[16];
-    snprintf(version_str, sizeof(version_str), "V%s", MURMSNES_VERSION);
+    snprintf(version_str, sizeof(version_str), "V%s", FRANK_SNES_VERSION);
 #else
     const char *version_str = "V?";
 #endif
@@ -1249,7 +1249,7 @@ void welcome_screen_show(void) {
         draw_logo_3x(logo_x, logo_y);
 
         /* Text */
-        fb_text_center(110, "MURMSNES", PAL_WHITE);
+        fb_text_center(110, "FRANK SNES", PAL_WHITE);
         fb_text_center(124, version_str, PAL_GRAY);
         fb_text_center(144, "BY MIKHAIL MATVEEV", PAL_GRAY);
         fb_text_center(156, "<XTREME@RH1.TECH>", PAL_GRAY);

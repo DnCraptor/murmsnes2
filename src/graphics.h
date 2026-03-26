@@ -1,5 +1,5 @@
 /*
- * murmsnes - Graphics header wrapper
+ * frank-snes - Graphics header wrapper
  * Maps graphics functions to HDMI driver
  */
 #ifndef GRAPHICS_H

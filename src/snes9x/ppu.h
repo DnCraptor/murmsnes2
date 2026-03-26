@@ -252,7 +252,7 @@ static INLINE void FLUSH_REDRAW(void)
  * writes to those PPU registers don't affect rendered pixels.  Skipping
  * the flush avoids catastrophic per-scanline S9xUpdateScreen overhead
  * (e.g. Contra III beam weapon HDMA → 224 flushes/frame → ~5 FPS). */
-#ifdef MURMSNES_FAST_MODE
+#ifdef FRANK_SNES_FAST_MODE
 #define FLUSH_REDRAW_EFFECT() ((void)0)
 #else
 #define FLUSH_REDRAW_EFFECT() FLUSH_REDRAW()

@@ -488,7 +488,7 @@ static void WRITE_4PIXELS16_FLIPPEDx2x2(int32_t Offset, uint8_t* Pixels, uint16_
  *
  * Uses the same odd/even lookup tables as ConvertTile to decode 4 pixels at a time.
  */
-#if PICO_ON_DEVICE && defined(MURMSNES_FAST_MODE)
+#if PICO_ON_DEVICE && defined(FRANK_SNES_FAST_MODE)
 #define DIRECT_DECODE_TILES 1
 
 static void DrawTile16_Direct4bpp(uint32_t Tile, int32_t Offset, uint32_t StartLine, uint32_t LineCount)

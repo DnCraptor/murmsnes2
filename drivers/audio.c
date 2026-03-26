@@ -1,5 +1,5 @@
 /*
- * murmsnes - I2S Audio Driver with Chained Double Buffer DMA
+ * frank-snes - I2S Audio Driver with Chained Double Buffer DMA
  * Based on murmgenesis audio driver by Mikhail Matveev
  *
  * Uses two DMA channels in ping-pong configuration:

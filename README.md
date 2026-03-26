@@ -1,4 +1,4 @@
-# MurmSNES
+# FRANK SNES
 
 SNES (Super Nintendo) emulator for Raspberry Pi Pico 2 (RP2350) with HDMI output, SD card ROM browser, NES/SNES gamepad, USB gamepad, PS/2 keyboard, and I2S audio support.
 
@@ -231,12 +231,12 @@ Settings are saved to `snes/settings.ini` and persist across reboots.
 ### Development Build
 
 ```bash
-git clone https://github.com/rh1tech/murmsnes.git
-cd murmsnes
+git clone https://github.com/rh1tech/frank-snes.git
+cd frank-snes
 ./build.sh M2    # or M1 for M1 layout
 ```
 
-Output: `build/murmsnes.uf2`
+Output: `build/frank-snes.uf2`
 
 ### Release Build
 
@@ -245,15 +245,15 @@ Output: `build/murmsnes.uf2`
 ```
 
 Builds both M1 and M2 variants with USB HID enabled. Output files in `release/`:
-- `murmsnes_m1_A_BB.uf2`
-- `murmsnes_m2_A_BB.uf2`
+- `frank-snes_m1_A_BB.uf2`
+- `frank-snes_m2_A_BB.uf2`
 
 ### Flashing
 
 Hold BOOTSEL and plug in the Pico 2 via USB, then copy the `.uf2` file to the mounted drive. Or use picotool:
 
 ```bash
-picotool load build/murmsnes.uf2
+picotool load build/frank-snes.uf2
 ```
 
 ## Troubleshooting
@@ -300,4 +300,4 @@ Special thanks to:
 
 Mikhail Matveev <<xtreme@rh1.tech>>
 
-[https://rh1.tech](https://rh1.tech) | [GitHub](https://github.com/rh1tech/murmsnes)
+[https://rh1.tech](https://rh1.tech) | [GitHub](https://github.com/rh1tech/frank-snes)

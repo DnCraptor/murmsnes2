@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# release.sh - Build release firmware for murmsnes
+# release.sh - Build release firmware for frank-snes
 #
 # Builds two variants: M1 and M2
-# Output: murmsnes_m1_A_BB.uf2, murmsnes_m2_A_BB.uf2
+# Output: frank-snes_m1_A_BB.uf2, frank-snes_m2_A_BB.uf2
 #
 
 set -e
@@ -35,7 +35,7 @@ fi
 
 echo ""
 echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${CYAN}│                    murmsnes Release Builder                     │${NC}"
+echo -e "${CYAN}│                    FRANK SNES Release Builder                      │${NC}"
 echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 echo -e "Last version: ${YELLOW}${LAST_MAJOR}.$(printf '%02d' $LAST_MINOR)${NC}"
@@ -82,7 +82,7 @@ FAIL=0
 
 for VARIANT in "${VARIANTS[@]}"; do
     VARIANT_LOWER=$(echo "$VARIANT" | tr '[:upper:]' '[:lower:]')
-    OUTPUT_NAME="murmsnes_${VARIANT_LOWER}_${VERSION}.uf2"
+    OUTPUT_NAME="frank-snes_${VARIANT_LOWER}_${VERSION}.uf2"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -96,8 +96,8 @@ for VARIANT in "${VARIANTS[@]}"; do
     cmake .. -DBOARD_VARIANT=${VARIANT} -DUSB_HID_ENABLED=ON > /dev/null 2>&1
 
     if make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) > /dev/null 2>&1; then
-        if [[ -f "murmsnes.uf2" ]]; then
-            cp "murmsnes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
+        if [[ -f "frank-snes.uf2" ]]; then
+            cp "frank-snes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
             echo -e "  ${GREEN}✓ ${VARIANT}${NC} → release/$OUTPUT_NAME"
         else
             echo -e "  ${RED}✗ ${VARIANT} UF2 not found${NC}"
@@ -121,7 +121,7 @@ else
     echo -e "${RED}Some builds failed!${NC}"
 fi
 echo ""
-ls -la "$RELEASE_DIR"/murmsnes_*_${VERSION}.uf2 2>/dev/null | awk '{print "  " $9 " (" $5 " bytes)"}'
+ls -la "$RELEASE_DIR"/frank-snes_*_${VERSION}.uf2 2>/dev/null | awk '{print "  " $9 " (" $5 " bytes)"}'
 echo ""
 echo -e "Version: ${CYAN}${MAJOR}.$(printf '%02d' $MINOR)${NC}"
 echo ""
