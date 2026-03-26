@@ -72,7 +72,7 @@ VERSION="${MAJOR}_$(printf '%02d' $MINOR)"
 echo ""
 echo -e "${GREEN}Building release version: ${MAJOR}.$(printf '%02d' $MINOR)${NC}"
 
-echo "$MAJOR $MINOR" > "$VERSION_FILE"
+printf '%d %02d\n' "$MAJOR" "$MINOR" > "$VERSION_FILE"
 
 RELEASE_DIR="$SCRIPT_DIR/release"
 mkdir -p "$RELEASE_DIR"
