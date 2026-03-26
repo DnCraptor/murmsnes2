@@ -449,7 +449,22 @@ void S9xEndScreenRefresh(void)
    if (IPPU.RenderThisFrame)
    {
       FLUSH_REDRAW();
-      
+
+      /* CRT overscan simulation: blank edge columns to hide
+       * offset-per-tile first-column artifacts and similar scroll
+       * edge glitches that SNES games relied on CRT overscan to
+       * conceal.  SuperFX titles need a wider margin. */
+      {
+         int edge = Settings.SuperFX ? 20 : 8;
+         int y;
+         for (y = 0; y < (int)PPU.ScreenHeight; y++)
+         {
+            uint8_t *p = GFX.Screen + y * GFX.Pitch;
+            memset(p, 0, edge);
+            memset(p + 256 - edge, 0, edge);
+         }
+      }
+
 #ifdef MURMSNES_FAST_MODE
       /* Increment BG frameskip counter after each rendered frame */
       bg_frame_counter++;
